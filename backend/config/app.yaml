@@ -1,0 +1,15 @@
+environment: local
+
+db:
+  type: memory
+  url: sqlite:///review_mvp.db
+
+agent:
+  provider: anyrouter
+  base_url: https://anyrouter.top/v1
+  api_key_env: ANYROUTER_API_KEY
+  use_responses_api: true
+  model: gpt-5.5
+  http_proxy: http://127.0.0.1:7897
+  https_proxy: http://127.0.0.1:7897
+  no_proxy: 127.0.0.1,localhost
