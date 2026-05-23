@@ -12,9 +12,9 @@ const API_BASE = localStorage.getItem("review_api_base") || "http://127.0.0.1:80
 const app = document.querySelector("#app");
 
 const store = {
-  records: [...fallbackReviewRecords],
-  methods: [...fallbackMethodCards],
-  calibrations: [...fallbackCalibrationCards],
+  records: [],
+  methods: [],
+  calibrations: [],
 };
 
 const state = {
@@ -26,9 +26,14 @@ const state = {
   filter: "全部",
   query: "",
   calibrationTab: "pending",
-  selectedRecordId: "r1",
+  selectedRecordId: "",
+  editingRecordId: null,
+  editingMethodId: null,
+  editingCalibrationId: null,
   currentBundle: null,
+  followUp: null,
   loading: false,
+  followUpLoading: false,
   apiOnline: false,
   toast: "",
 };
@@ -68,6 +73,16 @@ function notify(message) {
 
 function typeText(type) {
   return type === "event" ? "事件" : "焦虑";
+}
+
+function modeLabel(mode) {
+  return mode === "event" ? "复盘一件事" : "复盘一次焦虑";
+}
+
+function modePlaceholder(mode) {
+  return mode === "event"
+    ? "今天有什么事情值得复盘？发生了什么，你做了什么，结果哪里不满意？"
+    : "把这次焦虑写下来。你在担心什么，它从哪里开始，最害怕发生什么？";
 }
 
 function icon(name) {
@@ -123,11 +138,12 @@ async function analyzeDraft() {
     });
     const normalized = normalizeBundle(bundle);
     state.currentBundle = normalized;
+    state.followUp = null;
     upsertRecord(normalized.record);
     if (normalized.methodCard) upsertMethod(normalized.methodCard);
     if (normalized.calibrationCard) upsertCalibration(normalized.calibrationCard);
     setState({ loading: false, route: "summary", apiOnline: true });
-    notify("已从后端生成整理结果");
+    notify(normalized.warnings.length ? normalized.warnings[0] : "已调用 AI 生成整理结果");
   } catch (error) {
     const fallback = buildLocalBundle(rawInput, state.mode, state.scene);
     state.currentBundle = fallback;
@@ -144,6 +160,7 @@ function normalizeBundle(bundle) {
     record: normalizeRecord(bundle.record),
     methodCard: bundle.method_card ? normalizeMethod(bundle.method_card) : null,
     calibrationCard: bundle.calibration_card ? normalizeCalibration(bundle.calibration_card) : null,
+    warnings: bundle.warnings || [],
   };
 }
 
@@ -165,6 +182,7 @@ function normalizeRecord(record) {
     deepReview: record.deep_review || record.deepReview || {},
     resultCard,
     conclusion: record.conclusion || firstValue(resultCard) || "已生成一张可执行的复盘卡。",
+    note: record.note || record.myNote || "这次复盘让我意识到：确认步骤要前置。",
     status: savedToMethodLibrary ? "已生成方法卡" : savedToCalibration ? "已加入校准" : "未沉淀",
     savedToMethodLibrary,
     savedToCalibration,
@@ -174,6 +192,7 @@ function normalizeRecord(record) {
 function normalizeMethod(card) {
   return {
     id: card.id,
+    sourceReviewId: card.source_review_id || card.sourceReviewId || "",
     title: card.title,
     scenes: card.scenes || [],
     trigger: card.trigger || "",
@@ -186,10 +205,11 @@ function normalizeMethod(card) {
 function normalizeCalibration(card) {
   return {
     id: card.id,
+    sourceReviewId: card.source_review_id || card.sourceReviewId || "",
     worry: card.worry,
     scene: card.scene,
     estimatedProbability: card.estimated_probability || card.estimatedProbability || "80%",
-    verificationDate: card.verification_date || card.verificationDate || "2026-05-25",
+    verificationDate: card.verification_date || card.verificationDate || "",
     status: card.status || "pending",
     finalResult: card.final_result || card.finalResult || "",
     actualImpact: card.actual_impact || card.actualImpact || "",
@@ -214,8 +234,36 @@ function upsertCalibration(card) {
   store.calibrations = [card, ...store.calibrations.filter((item) => item.id !== card.id)];
 }
 
+function localDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(date, amount) {
+  const copy = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  copy.setDate(copy.getDate() + amount);
+  return copy;
+}
+
+function weekStartMonday(date = new Date()) {
+  const copy = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const mondayOffset = (copy.getDay() + 6) % 7;
+  copy.setDate(copy.getDate() - mondayOffset);
+  return copy;
+}
+
+function recordDateKey(record) {
+  return String(record.date || record.createdAt || "").slice(0, 10);
+}
+
+function monthDay(date) {
+  return localDateKey(date).slice(5);
+}
+
 function buildLocalBundle(rawInput, mode, scene) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateKey();
   const record = normalizeRecord({
     id: `local-${Date.now()}`,
     type: mode,
@@ -245,7 +293,7 @@ function buildLocalBundle(rawInput, mode, scene) {
       worry: record.title,
       scene,
       estimatedProbability: "80%",
-      verificationDate: "2026-05-25",
+      verificationDate: "",
       status: "pending",
     }) : null,
   };
@@ -259,6 +307,75 @@ function currentRecord() {
 function objectFields(object, fallback) {
   const entries = Object.entries(object || {});
   return entries.length ? entries : fallback;
+}
+
+function methodSourceLabel(source) {
+  const value = String(source || "").trim();
+  if (!value || /^event-[a-z0-9-]+$/i.test(value) || /^local-\d+$/i.test(value)) return "";
+  return value;
+}
+
+function findMethodForRecord(record) {
+  return store.methods.find((method) => method.sourceReviewId === record.id || method.source === record.title || method.source === record.id);
+}
+
+function createMethodFromRecord(record) {
+  const steps = record.resultCard?.行动步骤 || record.resultCard?.["行动步骤"] || [];
+  const method = normalizeMethod({
+    id: `local-method-${Date.now()}`,
+    title: `${record.title.slice(0, 14)}方法卡`,
+    scenes: [record.scene, "复盘"],
+    trigger: record.resultCard?.问题提醒 || "再次遇到类似情况前",
+    steps: Array.isArray(steps) && steps.length ? steps : ["复述当前情况", "确认目标和边界", "列出下一步行动"],
+    source: record.title,
+    updatedAt: localDateKey(),
+  });
+  upsertMethod(method);
+  return method;
+}
+
+function findCalibrationForRecord(record) {
+  return store.calibrations.find((card) => card.sourceReviewId === record.id || card.worry === record.title || card.worry === record.rawInput);
+}
+
+function replaceTextReferences(oldText, newText) {
+  const from = String(oldText || "").trim();
+  const to = String(newText || "").trim();
+  if (!from || from === to) return;
+
+  const replaceValue = (value) => {
+    if (typeof value === "string") return value === from ? to : value;
+    if (Array.isArray(value)) return value.map(replaceValue);
+    if (value && typeof value === "object") {
+      Object.keys(value).forEach((key) => {
+        value[key] = replaceValue(value[key]);
+      });
+    }
+    return value;
+  };
+
+  replaceValue(store);
+  if (state.currentBundle) replaceValue(state.currentBundle);
+}
+
+function syncFieldValue(oldValue, newValue) {
+  if (Array.isArray(oldValue) || Array.isArray(newValue)) {
+    const oldItems = Array.isArray(oldValue) ? oldValue : String(oldValue || "").split(/\r?\n/);
+    const newItems = Array.isArray(newValue) ? newValue : String(newValue || "").split(/\r?\n/);
+    oldItems.forEach((item, index) => replaceTextReferences(item, newItems[index] || ""));
+    replaceTextReferences(oldItems.join("\n"), newItems.join("\n"));
+    return;
+  }
+  replaceTextReferences(oldValue, newValue);
+}
+
+function editableFields(object, fallback) {
+  return objectFields(object, fallback).map(([label, value]) => [label, Array.isArray(value) ? value : String(value || "")]);
+}
+
+function parseEditableValue(value, originalValue) {
+  if (!Array.isArray(originalValue)) return value.trim();
+  return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
 }
 
 function shell(content) {
@@ -354,32 +471,23 @@ function quoteArt() {
 }
 
 function homePage() {
+  const mode = state.mode;
   return shell(`
     <main class="home-page">
       <section class="hero">
         <div class="hero-copy">
-          <h1>复盘一件事， 下一次会更好</h1>
+          <h1>${modeLabel(mode)}，下一次会更好</h1>
           <div class="input-panel">
-            <textarea data-draft maxlength="2000" placeholder="今天有什么事情值得复盘？">${escapeHtml(state.draft)}</textarea>
+            ${reviewContextControls(mode)}
+            <textarea data-draft maxlength="2000" placeholder="${modePlaceholder(mode)}">${escapeHtml(state.draft)}</textarea>
             <div class="input-footer">
+              <strong>${mode === "event" ? "整理事实槽位，沉淀方法卡" : "拆开担心槽位，生成校准卡"}</strong>
               <span>${state.draft.length} / 2000</span>
               <button class="primary-button" data-home-analyze ${state.loading ? "disabled" : ""}>${state.loading ? "整理中..." : "开始复盘"}</button>
             </div>
           </div>
         </div>
         ${deskPlantArt()}
-      </section>
-      <section class="entry-row">
-        <button class="entry-card event" data-start="event">
-          <span class="entry-illustration paper-icon"></span>
-          <span><strong>复盘一件事</strong><small>梳理事件，找到改进方法</small></span>
-          ${icons.chevron}
-        </button>
-        <button class="entry-card anxiety" data-start="anxiety">
-          <span class="entry-illustration flower-icon"></span>
-          <span><strong>复盘一次焦虑</strong><small>看清担心，减少内耗</small></span>
-          ${icons.chevron}
-        </button>
       </section>
       <section class="dashboard-grid">
         ${recentPanel()}
@@ -389,6 +497,25 @@ function homePage() {
       <div class="footer-line"><span>复盘，是为了更好的下一次</span></div>
     </main>
   `);
+}
+
+function reviewContextControls(mode) {
+  const sceneLabel = mode === "event" ? "主要场景" : "焦虑场景";
+  return `
+    <div class="review-context">
+      <div class="context-group type-group">
+        <span class="context-label">复盘类型</span>
+        <div class="review-mode-row" role="tablist" aria-label="复盘类型">
+          <button class="${mode === "event" ? "active" : ""}" data-mode="event" role="tab" aria-selected="${mode === "event"}">复盘一件事</button>
+          <button class="${mode === "anxiety" ? "active" : ""}" data-mode="anxiety" role="tab" aria-selected="${mode === "anxiety"}">复盘一次焦虑</button>
+        </div>
+      </div>
+      <div class="context-group scene-group">
+        <span class="context-label">${sceneLabel}</span>
+        <div class="chips context-chips">${scenes[mode].map((scene) => `<button class="chip ${state.scene === scene ? "selected" : ""}" data-scene="${scene}">${scene}</button>`).join("")}</div>
+      </div>
+    </div>
+  `;
 }
 
 function recentPanel() {
@@ -409,17 +536,44 @@ function recentPanel() {
 }
 
 function weekPanel() {
-  const reviewedDays = Math.min(7, store.records.length);
+  const today = new Date();
+  const todayKey = localDateKey(today);
+  const weekStart = weekStartMonday(today);
+  const weekKeys = new Set(Array.from({ length: 7 }, (_, index) => localDateKey(addDays(weekStart, index))));
+  const recordCountByDate = store.records.reduce((counts, record) => {
+    const key = recordDateKey(record);
+    if (weekKeys.has(key)) counts[key] = (counts[key] || 0) + 1;
+    return counts;
+  }, {});
+  const weekDays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"].map((label, index) => {
+    const date = addDays(weekStart, index);
+    const key = localDateKey(date);
+    return {
+      label,
+      key,
+      dateText: monthDay(date),
+      count: recordCountByDate[key] || 0,
+      isToday: key === todayKey,
+    };
+  });
+  const reviewedDays = weekDays.filter((day) => day.count > 0).length;
+  const weeklyRecordCount = Object.values(recordCountByDate).reduce((total, count) => total + count, 0);
+  const ringProgress = Math.round((reviewedDays / 7) * 100);
   return `
     <article class="panel week-panel">
       <h2>本周回顾</h2>
       <div class="week-content">
-        <div class="ring"><span>${reviewedDays}<small>/7</small></span></div>
+        <div class="ring" style="--progress: ${ringProgress}%"><span>${reviewedDays}<small>/7</small></span></div>
         <ul class="week-days">
-          ${["周一", "周二", "周三", "周四", "周五", "周六", "周日"].map((day, index) => `<li class="${index < reviewedDays ? "done" : ""}"><span>${day}</span><i>${index < reviewedDays ? "✓" : ""}</i></li>`).join("")}
+          ${weekDays.map((day) => `
+            <li class="${day.count > 0 ? "done" : ""} ${day.isToday ? "today" : ""}">
+              <span><b>${day.label}</b><small>${day.dateText}${day.isToday ? " · 今天" : ""}</small></span>
+              <i>${day.count > 0 ? "✓" : ""}</i>
+            </li>
+          `).join("")}
         </ul>
       </div>
-      <p>本周复盘 ${reviewedDays} 天<br />已完成 ${store.records.length} 件复盘</p>
+      <p>本周复盘 ${reviewedDays} 天<br />本周完成 ${weeklyRecordCount} 件复盘</p>
     </article>
   `;
 }
@@ -439,10 +593,9 @@ function inputPage(mode) {
   return shell(`
     <main class="content-page narrow-page">
       ${pageHeader(title)}
+      ${reviewContextControls(mode)}
       <textarea class="large-textarea" data-draft maxlength="2000" placeholder="${placeholder}">${escapeHtml(state.draft)}</textarea>
       <div class="textarea-count">${state.draft.length} / 2000</div>
-      <h3 class="field-title">选择场景（可选）</h3>
-      <div class="chips">${scenes[mode].map((scene) => `<button class="chip ${state.scene === scene ? "selected" : ""}" data-scene="${scene}">${scene}</button>`).join("")}</div>
       <button class="primary-button wide" data-analyze ${state.loading ? "disabled" : ""}>${state.loading ? "整理中..." : "开始整理"}</button>
     </main>
   `);
@@ -456,11 +609,11 @@ function summaryPage() {
   const record = currentRecord();
   return shell(`
     <main class="content-page narrow-page">
-      ${pageHeader("AI 整理结果", state.mode === "event" ? "eventInput" : "anxietyInput")}
+      ${pageHeader("AI 整理结果", "home")}
       ${flowTabs()}
       ${fieldGrid(objectFields(record.summary, summaryTemplates[state.mode]))}
       <div class="action-row">
-        <button class="secondary-button" data-route="${state.mode === "event" ? "eventInput" : "anxietyInput"}">修改内容</button>
+        <button class="secondary-button" data-route="home">修改内容</button>
         <button class="primary-button" data-route="deep">开始复盘</button>
       </div>
     </main>
@@ -485,6 +638,7 @@ function deepPage() {
 function resultPage() {
   const record = currentRecord();
   const title = state.mode === "event" ? "下次行动卡" : "焦虑校准卡";
+  const calibration = state.mode === "anxiety" ? findCalibrationForRecord(record) : null;
   return shell(`
     <main class="content-page narrow-page">
       ${pageHeader(title, "deep")}
@@ -492,22 +646,65 @@ function resultPage() {
       <div class="action-row wrap">
         <button class="secondary-button" data-tab="records" data-toast="已保存到记录">保存到记录</button>
         <button class="secondary-button" data-tab="${state.mode === "event" ? "methods" : "calibration"}" data-toast="${state.mode === "event" ? "已保存到方法库" : "已保存到校准"}">${state.mode === "event" ? "保存到方法库" : "保存到校准"}</button>
-        ${state.mode === "anxiety" ? `<button class="ghost-button" data-toast="验证日期已记录为 2026-05-25">设置验证日期</button>` : ""}
-        <button class="ghost-button" data-toast="继续追问会在接入真实 AI 后开放">继续追问</button>
+        ${state.mode === "anxiety" ? `
+          <label class="date-picker">验证日期
+            <input type="date" data-result-verification-date value="${escapeHtml(calibration?.verificationDate || "")}" />
+          </label>
+          <button class="ghost-button" data-save-result-verification="${calibration?.id || ""}">保存验证日期</button>
+        ` : ""}
+        <button class="ghost-button" data-follow-up="${record.id}" ${state.followUpLoading ? "disabled" : ""}>${state.followUpLoading ? "追问中..." : "继续追问"}</button>
       </div>
+      ${state.followUp ? followUpPanel(state.followUp) : ""}
     </main>
   `);
+}
+
+function followUpPanel(followUp) {
+  const data = followUp.follow_up || followUp;
+  const warnings = followUp.warnings || [];
+  return `
+    <section class="follow-up-panel">
+      <div class="panel-head"><h2>继续追问</h2>${warnings.length ? `<span>${escapeHtml(warnings[0])}</span>` : ""}</div>
+      <article class="field-card">
+        <h3>${escapeHtml(data.question || "下一步可以追问的问题")}</h3>
+        <p>${escapeHtml(data.why || "")}</p>
+        <p><strong>回答方式：</strong>${escapeHtml(data.suggested_answer_shape || "")}</p>
+        <p><strong>下一步：</strong>${escapeHtml(data.next_action || "")}</p>
+      </article>
+    </section>
+  `;
 }
 
 function fieldGrid(fields, numbered = false) {
   return `
     <div class="field-grid">
       ${fields.map(([label, value], index) => {
-        const body = Array.isArray(value) ? `<ol>${value.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>` : `<p>${escapeHtml(String(value))}</p>`;
+        const body = fieldBody(value);
         return `<article class="field-card">${numbered ? `<span class="number">${index + 1}</span>` : ""}<h3>${label}</h3>${body}</article>`;
       }).join("")}
     </div>
   `;
+}
+
+function fieldBody(value) {
+  if (Array.isArray(value)) {
+    return `<ol>${value.map((item) => `<li>${escapeHtml(displayValue(item))}</li>`).join("")}</ol>`;
+  }
+  const text = displayValue(value);
+  return text
+    .split("\n")
+    .map((line) => `<p>${escapeHtml(line)}</p>`)
+    .join("");
+}
+
+function displayValue(value) {
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value)) return value.map(displayValue).filter(Boolean).join("\n");
+  if (typeof value !== "object") return String(value);
+  return Object.entries(value)
+    .map(([key, item]) => `${key}：${displayValue(item)}`)
+    .filter((line) => !line.endsWith("："))
+    .join("\n");
 }
 
 function recordsPage() {
@@ -518,7 +715,7 @@ function recordsPage() {
 
 function methodsPage() {
   const filters = ["全部", "工作", "学习", "面试", "人际", "决策", "生活", "其他"];
-  const filtered = store.methods.filter((card) => (state.filter === "全部" || card.scenes.includes(state.filter)) && matchesQuery([card.title, card.trigger, card.source]));
+  const filtered = store.methods.filter((card) => (state.filter === "全部" || card.scenes.includes(state.filter)) && matchesQuery([card.title, card.trigger, methodSourceLabel(card.source)]));
   return shell(`<main class="content-page"><h1 class="list-title">方法库</h1>${filterRow(filters)}<div class="method-grid">${filtered.map(methodCard).join("") || emptyState("没有找到匹配的方法卡")}</div></main>`);
 }
 
@@ -536,6 +733,7 @@ function calibrationPage() {
 function detailPage() {
   const record = store.records.find((item) => item.id === state.selectedRecordId) || store.records[0];
   const mode = record.type;
+  if (state.editingRecordId === record.id) return detailEditPage(record);
   return shell(`
     <main class="content-page narrow-page">
       ${pageHeader("详情", "records")}
@@ -548,13 +746,50 @@ function detailPage() {
         ["我的笔记", "这次复盘让我意识到：确认步骤要前置。"],
       ])}
       <div class="action-row wrap">
-        <button class="ghost-button" data-toast="编辑能力下一版接入">编辑</button>
+        <button class="ghost-button" data-edit-record="${record.id}">编辑复盘内容</button>
+        ${mode === "event" ? `<button class="secondary-button" data-edit-record-method="${record.id}">编辑方法卡</button>` : ""}
         <button class="ghost-button" data-reanalyze="${record.id}">重新分析</button>
-        <button class="secondary-button" data-toast="${mode === "event" ? "已保存为方法卡" : "已加入校准"}">${mode === "event" ? "保存为方法卡" : "加入校准"}</button>
+        <button class="${mode === "event" ? "ghost-button" : "secondary-button"}" data-toast="${mode === "event" ? "已保存为方法卡" : "已加入校准"}">${mode === "event" ? "保存为方法卡" : "加入校准"}</button>
+        <button class="danger-button" data-delete-record="${record.id}">删除</button>
         <button class="ghost-button" data-toast="已归档，本地演示不删除数据">归档</button>
       </div>
     </main>
   `);
+}
+
+function detailEditPage(record) {
+  const mode = record.type;
+  return shell(`
+    <main class="content-page narrow-page">
+      ${pageHeader("编辑详情", "records")}
+      <section class="detail-hero detail-editor" data-record-editor="${record.id}">
+        <label>标题<input data-record-title value="${escapeHtml(record.title)}" /></label>
+        <label>场景<input data-record-scene value="${escapeHtml(record.scene)}" /></label>
+        <label>原始输入<textarea data-record-raw>${escapeHtml(record.rawInput)}</textarea></label>
+        ${editableSection("summary", "AI 整理", editableFields(record.summary, summaryTemplates[mode]))}
+        ${editableSection("deepReview", "深度复盘", editableFields(record.deepReview, deepReviewTemplates[mode]))}
+        ${editableSection("resultCard", mode === "event" ? "行动卡" : "校准卡", editableFields(record.resultCard, resultCards[mode].fields))}
+        <label>我的笔记<textarea data-record-note>${escapeHtml(record.note || "")}</textarea></label>
+      </section>
+      <div class="action-row wrap">
+        <button class="primary-button" data-save-record="${record.id}">保存</button>
+        <button class="ghost-button" data-cancel-record-edit>取消</button>
+      </div>
+    </main>
+  `);
+}
+
+function editableSection(section, title, fields) {
+  return `
+    <fieldset class="edit-fieldset">
+      <legend>${title}</legend>
+      ${fields.map(([label, value], index) => `
+        <label>${escapeHtml(label)}
+          <textarea data-record-field data-section="${section}" data-label="${escapeHtml(label)}" data-index="${index}">${escapeHtml(Array.isArray(value) ? value.join("\n") : value)}</textarea>
+        </label>
+      `).join("")}
+    </fieldset>
+  `;
 }
 
 function filterRow(filters) {
@@ -562,16 +797,94 @@ function filterRow(filters) {
 }
 
 function recordCard(record) {
-  return `<article class="list-card" data-detail="${record.id}"><div><h3>${record.title}</h3><p>${typeText(record.type)} · ${record.scene} · ${record.date}</p><strong>${record.conclusion}</strong></div><span>${record.status}</span></article>`;
+  return `
+    <article class="list-card" data-detail="${record.id}">
+      <div class="card-title-row">
+        <div><h3>${escapeHtml(record.title)}</h3><p>${typeText(record.type)} · ${escapeHtml(record.scene)} · ${record.date}</p></div>
+        <button class="text-button danger-text" data-delete-record="${record.id}">删除</button>
+      </div>
+      <strong>${escapeHtml(record.conclusion)}</strong>
+      <span>${record.status}</span>
+    </article>
+  `;
 }
 
 function methodCard(card) {
-  return `<article class="list-card method-card"><h3>${card.title}</h3><p>${card.scenes.join("、")}</p><strong>触发条件：${card.trigger}</strong><ol>${card.steps.map((step) => `<li>${step}</li>`).join("")}</ol><p>来源复盘：${card.source}</p></article>`;
+  if (state.editingMethodId === card.id) return methodEditCard(card);
+  const source = methodSourceLabel(card.source);
+  return `
+    <article class="list-card method-card">
+      <div class="card-title-row">
+        <h3>${escapeHtml(card.title)}</h3>
+        <div class="inline-actions">
+          <button class="text-button" data-edit-method="${card.id}">编辑</button>
+          <button class="text-button danger-text" data-delete-method="${card.id}">删除</button>
+        </div>
+      </div>
+      <p>${card.scenes.map(escapeHtml).join("、")}</p>
+      <strong>触发条件：${escapeHtml(card.trigger)}</strong>
+      <ol>${card.steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ol>
+      ${source ? `<p>来自：${escapeHtml(source)}</p>` : ""}
+    </article>
+  `;
+}
+
+function methodEditCard(card) {
+  return `
+    <article class="list-card method-card method-editor" data-method-editor="${card.id}">
+      <label>方法名<input data-method-title value="${escapeHtml(card.title)}" /></label>
+      <label>适用场景<input data-method-scenes value="${escapeHtml(card.scenes.join("、"))}" /></label>
+      <label>触发条件<textarea data-method-trigger>${escapeHtml(card.trigger)}</textarea></label>
+      <label>行动步骤<textarea data-method-steps>${escapeHtml(card.steps.join("\n"))}</textarea></label>
+      <div class="action-row compact">
+        <button class="primary-button" data-save-method="${card.id}">保存</button>
+        <button class="ghost-button" data-cancel-method-edit>取消</button>
+      </div>
+    </article>
+  `;
 }
 
 function calibrationCard(card) {
+  if (state.editingCalibrationId === card.id) return calibrationEditCard(card);
   const verified = card.status === "verified";
-  return `<article class="list-card"><h3>${card.worry}</h3><p>${card.scene} · 当时预计概率：${card.estimatedProbability}</p><strong>${verified ? `最终是否发生：${card.finalResult}` : `验证日期：${card.verificationDate}`}</strong>${verified ? `<p>实际影响：${card.actualImpact}</p><p>${card.calibrationConclusion}</p>` : `<span>待验证</span>`}</article>`;
+  return `
+    <article class="list-card calibration-card">
+      <div class="card-title-row">
+        <h3>${escapeHtml(card.worry)}</h3>
+        <div class="inline-actions">
+          <button class="text-button" data-edit-calibration="${card.id}">编辑</button>
+          <button class="text-button danger-text" data-delete-calibration="${card.id}">删除</button>
+        </div>
+      </div>
+      <p>${escapeHtml(card.scene)} · 当时预计概率：${escapeHtml(card.estimatedProbability)}</p>
+      <strong>${verified ? `最终是否发生：${escapeHtml(card.finalResult)}` : `验证日期：${card.verificationDate || "未设置"}`}</strong>
+      ${verified ? `<p>实际影响：${escapeHtml(card.actualImpact)}</p><p>${escapeHtml(card.calibrationConclusion)}</p>` : `<span>待验证</span>`}
+    </article>
+  `;
+}
+
+function calibrationEditCard(card) {
+  return `
+    <article class="list-card calibration-card method-editor" data-calibration-editor="${card.id}">
+      <label>担心内容<textarea data-calibration-worry>${escapeHtml(card.worry)}</textarea></label>
+      <label>场景<input data-calibration-scene value="${escapeHtml(card.scene)}" /></label>
+      <label>当时预计概率<input data-calibration-probability value="${escapeHtml(card.estimatedProbability)}" /></label>
+      <label>验证日期<input type="date" data-calibration-date value="${escapeHtml(card.verificationDate)}" /></label>
+      <label>状态
+        <select data-calibration-status>
+          <option value="pending" ${card.status === "pending" ? "selected" : ""}>待验证</option>
+          <option value="verified" ${card.status === "verified" ? "selected" : ""}>已验证</option>
+        </select>
+      </label>
+      <label>最终是否发生<textarea data-calibration-final>${escapeHtml(card.finalResult)}</textarea></label>
+      <label>实际影响<input data-calibration-impact value="${escapeHtml(card.actualImpact)}" /></label>
+      <label>校准结论<textarea data-calibration-conclusion>${escapeHtml(card.calibrationConclusion)}</textarea></label>
+      <div class="action-row compact">
+        <button class="primary-button" data-save-calibration="${card.id}">保存</button>
+        <button class="ghost-button" data-cancel-calibration-edit>取消</button>
+      </div>
+    </article>
+  `;
 }
 
 function matchesFilter(record, filter) {
@@ -615,7 +928,189 @@ function render() {
   app.innerHTML = routes[state.route]();
 }
 
-app.addEventListener("click", (event) => {
+function saveMethodCard(id) {
+  const editor = app.querySelector(`[data-method-editor="${id}"]`);
+  const card = store.methods.find((item) => item.id === id);
+  if (!editor || !card) return;
+
+  const title = editor.querySelector("[data-method-title]").value.trim();
+  const sceneValue = editor.querySelector("[data-method-scenes]").value.trim();
+  const trigger = editor.querySelector("[data-method-trigger]").value.trim();
+  const steps = editor.querySelector("[data-method-steps]").value
+    .split(/\r?\n/)
+    .map((step) => step.trim())
+    .filter(Boolean);
+
+  Object.assign(card, {
+    title: title || card.title,
+    scenes: sceneValue ? sceneValue.split(/[、,，]/).map((scene) => scene.trim()).filter(Boolean) : card.scenes,
+    trigger: trigger || card.trigger,
+    steps: steps.length ? steps : card.steps,
+    updatedAt: localDateKey(),
+  });
+  setState({ editingMethodId: null });
+  notify("方法卡已更新");
+}
+
+function saveRecord(id) {
+  const editor = app.querySelector(`[data-record-editor="${id}"]`);
+  const record = store.records.find((item) => item.id === id);
+  if (!editor || !record) return;
+
+  const oldTitle = record.title;
+  const oldScene = record.scene;
+  const oldRawInput = record.rawInput;
+  const oldNote = record.note || "";
+  const title = editor.querySelector("[data-record-title]").value.trim() || record.title;
+  const scene = editor.querySelector("[data-record-scene]").value.trim() || record.scene;
+  const rawInput = editor.querySelector("[data-record-raw]").value.trim();
+  const note = editor.querySelector("[data-record-note]").value.trim();
+
+  syncFieldValue(oldTitle, title);
+  syncFieldValue(oldScene, scene);
+  syncFieldValue(oldRawInput, rawInput);
+  syncFieldValue(oldNote, note);
+
+  record.title = title;
+  record.scene = scene;
+  record.rawInput = rawInput;
+  record.note = note;
+  record.updatedAt = localDateKey();
+
+  editor.querySelectorAll("[data-record-field]").forEach((field) => {
+    const section = field.dataset.section;
+    const label = field.dataset.label;
+    const target = record[section] || {};
+    const original = target[label];
+    const next = parseEditableValue(field.value, original);
+    syncFieldValue(original, next);
+    target[label] = next;
+    record[section] = target;
+  });
+
+  record.conclusion = firstValue(record.resultCard) || record.conclusion;
+  if (state.currentBundle?.record?.id === record.id) state.currentBundle.record = record;
+  setState({ editingRecordId: null });
+  notify("复盘内容已更新");
+}
+
+function saveCalibration(id) {
+  const editor = app.querySelector(`[data-calibration-editor="${id}"]`);
+  const card = store.calibrations.find((item) => item.id === id);
+  if (!editor || !card) return;
+
+  const updates = {
+    worry: editor.querySelector("[data-calibration-worry]").value.trim(),
+    scene: editor.querySelector("[data-calibration-scene]").value.trim(),
+    estimatedProbability: editor.querySelector("[data-calibration-probability]").value.trim(),
+    verificationDate: editor.querySelector("[data-calibration-date]").value,
+    status: editor.querySelector("[data-calibration-status]").value,
+    finalResult: editor.querySelector("[data-calibration-final]").value.trim(),
+    actualImpact: editor.querySelector("[data-calibration-impact]").value.trim(),
+    calibrationConclusion: editor.querySelector("[data-calibration-conclusion]").value.trim(),
+  };
+
+  Object.entries(updates).forEach(([key, value]) => syncFieldValue(card[key], value));
+  Object.assign(card, updates);
+  setState({ editingCalibrationId: null });
+  notify("校准卡已更新");
+}
+
+function saveResultVerification(calibrationId) {
+  const input = app.querySelector("[data-result-verification-date]");
+  const record = currentRecord();
+  const card = store.calibrations.find((item) => item.id === calibrationId) || findCalibrationForRecord(record);
+  if (!input || !card) return;
+  syncFieldValue(card.verificationDate, input.value);
+  card.verificationDate = input.value;
+  notify(input.value ? "验证日期已更新" : "已清空验证日期");
+}
+
+function localDeleteRecord(id) {
+  store.records = store.records.filter((item) => item.id !== id);
+  store.methods = store.methods.filter((item) => item.sourceReviewId !== id && item.source !== id);
+  store.calibrations = store.calibrations.filter((item) => item.sourceReviewId !== id);
+  if (state.selectedRecordId === id) state.selectedRecordId = store.records[0]?.id || "";
+  if (state.currentBundle?.record?.id === id) state.currentBundle = null;
+}
+
+function localDeleteMethod(id) {
+  store.methods = store.methods.filter((item) => item.id !== id);
+  if (state.editingMethodId === id) state.editingMethodId = null;
+}
+
+function localDeleteCalibration(id) {
+  store.calibrations = store.calibrations.filter((item) => item.id !== id);
+  if (state.editingCalibrationId === id) state.editingCalibrationId = null;
+}
+
+async function deleteResource(kind, id) {
+  const pathByKind = {
+    record: `/reviews/${id}`,
+    method: `/methods/${id}`,
+    calibration: `/calibrations/${id}`,
+  };
+  const localDeleteByKind = {
+    record: localDeleteRecord,
+    method: localDeleteMethod,
+    calibration: localDeleteCalibration,
+  };
+  try {
+    await request(pathByKind[kind], { method: "DELETE" });
+    state.apiOnline = true;
+  } catch (error) {
+    state.apiOnline = false;
+  }
+  localDeleteByKind[kind](id);
+  const route = kind === "record" ? "records" : kind === "method" ? "methods" : "calibration";
+  const tab = kind === "record" ? "records" : kind === "method" ? "methods" : "calibration";
+  setState({ route, tab });
+  notify(kind === "record" ? "记录已删除" : kind === "method" ? "方法卡已删除" : "校准卡已删除");
+}
+
+async function requestFollowUp(reviewId) {
+  if (!reviewId) return;
+  setState({ followUpLoading: true });
+  try {
+    const response = await request(`/reviews/${reviewId}/follow-up`, {
+      method: "POST",
+      body: JSON.stringify({ stage: state.route, question: "" }),
+    });
+    setState({ followUp: response, followUpLoading: false, apiOnline: true });
+    const warnings = response.warnings || [];
+    notify(warnings.length ? warnings[0] : "已生成继续追问");
+  } catch (error) {
+    const record = currentRecord();
+    const fallback = buildLocalFollowUp(record);
+    setState({ followUp: fallback, followUpLoading: false, apiOnline: false });
+    notify("后端未连接，已用本地追问继续");
+  }
+}
+
+function buildLocalFollowUp(record) {
+  if (record.type === "anxiety") {
+    return {
+      follow_up: {
+        question: "这件事里，你现在能控制的最小一步是什么？",
+        why: "把焦虑拆成可控动作后，校准卡才会更容易验证。",
+        suggested_answer_shape: "写一个 30 分钟内能完成的动作，包含完成标准。",
+        next_action: "完成这个动作后，再回来更新校准卡。",
+      },
+      warnings: ["本地追问建议"],
+    };
+  }
+  return {
+    follow_up: {
+      question: "如果回到事情开始前，你最应该提前确认哪一个信息？",
+      why: "这能把复盘从解释问题，推进到下次可复用的方法。",
+      suggested_answer_shape: "写出具体问题、应该问谁、确认清楚的标准。",
+      next_action: "把这个确认动作加入方法卡。",
+    },
+    warnings: ["本地追问建议"],
+  };
+}
+
+app.addEventListener("click", async (event) => {
   const target = event.target.closest("button, article[data-detail]");
   if (!target) return;
 
@@ -624,14 +1119,92 @@ app.addEventListener("click", (event) => {
   }
 
   if (target.dataset.homeAnalyze !== undefined) {
-    state.mode = "event";
-    state.scene = "工作";
     analyzeDraft();
     return;
   }
 
   if (target.dataset.analyze !== undefined) {
     analyzeDraft();
+    return;
+  }
+
+  if (target.dataset.editMethod) {
+    setState({ editingMethodId: target.dataset.editMethod, tab: "methods", route: "methods" });
+    return;
+  }
+
+  if (target.dataset.saveMethod) {
+    saveMethodCard(target.dataset.saveMethod);
+    return;
+  }
+
+  if (target.dataset.saveRecord) {
+    saveRecord(target.dataset.saveRecord);
+    return;
+  }
+
+  if (target.dataset.saveCalibration) {
+    saveCalibration(target.dataset.saveCalibration);
+    return;
+  }
+
+  if (target.dataset.saveResultVerification !== undefined) {
+    saveResultVerification(target.dataset.saveResultVerification);
+    return;
+  }
+
+  if (target.dataset.followUp) {
+    requestFollowUp(target.dataset.followUp);
+    return;
+  }
+
+  if (target.dataset.cancelMethodEdit !== undefined) {
+    setState({ editingMethodId: null });
+    return;
+  }
+
+  if (target.dataset.cancelRecordEdit !== undefined) {
+    setState({ editingRecordId: null });
+    return;
+  }
+
+  if (target.dataset.cancelCalibrationEdit !== undefined) {
+    setState({ editingCalibrationId: null });
+    return;
+  }
+
+  if (target.dataset.editRecord) {
+    setState({ editingRecordId: target.dataset.editRecord });
+    return;
+  }
+
+  if (target.dataset.editRecordMethod) {
+    const record = store.records.find((item) => item.id === target.dataset.editRecordMethod);
+    if (record) {
+      const method = findMethodForRecord(record) || createMethodFromRecord(record);
+      setState({ editingMethodId: method.id, route: "methods", tab: "methods", filter: "全部" });
+      notify("已打开对应方法卡");
+    }
+    return;
+  }
+
+  if (target.dataset.editCalibration) {
+    setState({ editingCalibrationId: target.dataset.editCalibration });
+    return;
+  }
+
+  if (target.dataset.deleteRecord) {
+    await deleteResource("record", target.dataset.deleteRecord);
+    return;
+  }
+
+  if (target.dataset.deleteMethod) {
+    await deleteResource("method", target.dataset.deleteMethod);
+    return;
+  }
+
+  if (target.dataset.deleteCalibration) {
+    await deleteResource("calibration", target.dataset.deleteCalibration);
     return;
   }
 
@@ -646,9 +1219,10 @@ app.addEventListener("click", (event) => {
     return;
   }
 
-  if (target.dataset.start) {
-    const mode = target.dataset.start;
-    setState({ mode, scene: scenes[mode][0], route: mode === "event" ? "eventInput" : "anxietyInput", tab: "review" });
+  if (target.dataset.mode) {
+    const mode = target.dataset.mode;
+    const nextScene = scenes[mode].includes(state.scene) ? state.scene : scenes[mode][0];
+    setState({ mode, scene: nextScene, tab: "review" });
     return;
   }
 

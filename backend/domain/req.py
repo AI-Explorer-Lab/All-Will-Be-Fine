@@ -32,3 +32,16 @@ class UpdateNoteRequest:
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "UpdateNoteRequest":
         return cls(note=(payload.get("note") or "").strip())
+
+
+@dataclass
+class FollowUpRequest:
+    question: str = ""
+    stage: str = "result"
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "FollowUpRequest":
+        return cls(
+            question=(payload.get("question") or "").strip(),
+            stage=(payload.get("stage") or "result").strip(),
+        )

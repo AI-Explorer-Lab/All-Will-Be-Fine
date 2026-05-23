@@ -31,7 +31,9 @@ body {
 }
 
 button,
-textarea {
+textarea,
+input,
+select {
   font: inherit;
 }
 
@@ -308,23 +310,80 @@ textarea {
 }
 
 .input-panel {
-  height: 184px;
+  min-height: 286px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: rgba(255, 253, 249, 0.92);
   box-shadow: var(--shadow);
-  padding: 28px 24px 18px;
+  padding: 20px 24px 18px;
 }
 
 .input-panel textarea {
   width: 100%;
-  height: 96px;
+  height: 104px;
   border: 0;
   outline: 0;
   color: var(--ink);
   background: transparent;
   font-size: 17px;
   line-height: 1.8;
+}
+
+.review-context {
+  display: grid;
+  grid-template-columns: 324px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  padding-bottom: 16px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid rgba(220, 201, 181, 0.72);
+}
+
+.context-group {
+  min-width: 0;
+}
+
+.context-label {
+  display: block;
+  margin: 0 0 8px 4px;
+  color: #7a6858;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.review-mode-row {
+  width: 312px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #f7eee5;
+}
+
+.review-mode-row button {
+  height: 38px;
+  border-radius: 9px;
+  color: #6d594a;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.review-mode-row button.active {
+  color: var(--orange-dark);
+  background: #fff1e5;
+  border: 1px solid #edc29f;
+}
+
+.context-chips {
+  gap: 8px;
+}
+
+.context-chips .chip {
+  min-width: 0;
+  height: 36px;
+  padding: 0 15px;
 }
 
 .input-panel textarea::placeholder,
@@ -339,6 +398,13 @@ textarea {
   gap: 28px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.input-footer strong {
+  margin-right: auto;
+  color: #6d5b4c;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .primary-button,
@@ -525,11 +591,12 @@ button:active {
 }
 
 .recent-item {
-  height: 72px;
+  min-height: 76px;
+  padding: 0 10px 0 6px;
   display: grid;
-  grid-template-columns: 46px 1fr auto;
+  grid-template-columns: 45px minmax(0, 1fr) 52px;
   align-items: center;
-  gap: 16px;
+  column-gap: 14px;
   color: var(--ink);
   background: transparent;
   border-top: 1px solid #eee0cd;
@@ -569,7 +636,10 @@ button:active {
 .recent-item strong {
   display: block;
   font-size: 16px;
-  margin-bottom: 8px;
+  margin-bottom: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .recent-item small,
@@ -577,6 +647,19 @@ button:active {
   color: var(--muted);
   font-size: 14px;
   font-style: normal;
+}
+
+.recent-item small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-item em {
+  justify-self: end;
+  min-width: 42px;
+  text-align: right;
 }
 
 .week-content {
@@ -595,7 +678,7 @@ button:active {
   border-radius: 50%;
   background:
     radial-gradient(circle, #fffdf8 0 54%, transparent 55%),
-    conic-gradient(var(--orange) 0 43%, #f8eadb 43% 100%);
+    conic-gradient(var(--orange) 0 var(--progress, 0%), #f8eadb var(--progress, 0%) 100%);
   box-shadow: inset 0 0 0 14px #fff6ed;
 }
 
@@ -618,11 +701,31 @@ button:active {
 
 .week-days li {
   display: grid;
-  grid-template-columns: 42px 22px;
+  grid-template-columns: 1fr 22px;
   gap: 10px;
   align-items: center;
   color: #4e392e;
   font-size: 15px;
+}
+
+.week-days b {
+  display: block;
+  font-weight: 800;
+}
+
+.week-days small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.week-days .today {
+  color: var(--orange-dark);
+}
+
+.week-days .today small {
+  color: var(--orange-dark);
 }
 
 .week-days i {
@@ -885,6 +988,147 @@ button:active {
   line-height: 1.7;
 }
 
+.card-title-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.text-button {
+  align-self: start;
+  min-width: 52px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--orange-dark);
+  background: #fff0e4;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.inline-actions {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.danger-button,
+.danger-text {
+  color: #9b2f1f;
+  border-color: #e0a093;
+  background: #fff0ed;
+}
+
+.danger-button {
+  min-width: 96px;
+  height: 44px;
+  border: 1px solid #e0a093;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.method-editor {
+  display: grid;
+  gap: 14px;
+}
+
+.method-editor label,
+.detail-editor label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.method-editor input,
+.method-editor textarea,
+.method-editor select,
+.detail-editor input,
+.detail-editor textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: 0;
+  padding: 11px 12px;
+  color: var(--ink);
+  background: #fffaf3;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.method-editor textarea {
+  min-height: 92px;
+}
+
+.detail-editor {
+  display: grid;
+  gap: 16px;
+}
+
+.detail-editor textarea {
+  min-height: 96px;
+}
+
+.edit-fieldset {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.edit-fieldset legend {
+  padding: 0 8px;
+  color: var(--orange-dark);
+  font-weight: 800;
+}
+
+.date-picker {
+  min-width: 206px;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  background: #fffaf3;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.date-picker input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  background: transparent;
+}
+
+.action-row.compact {
+  margin-top: 4px;
+}
+
+.follow-up-panel {
+  margin-top: 22px;
+}
+
+.follow-up-panel .panel-head {
+  margin-bottom: 12px;
+}
+
+.follow-up-panel .panel-head span {
+  max-width: 520px;
+  color: var(--muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .detail-hero {
   padding: 24px;
   margin-bottom: 18px;
@@ -939,5 +1183,14 @@ button:active {
   .entry-row {
     margin-left: 20px;
     margin-right: 20px;
+  }
+
+  .review-context {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .review-mode-row {
+    max-width: 312px;
   }
 }

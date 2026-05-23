@@ -1,160 +1,325 @@
 from __future__ import annotations
 
+from datetime import date, datetime, time
+from typing import Any
+
+from sqlalchemy.orm import sessionmaker
+
+from backend.database.init_db import init_database
+from backend.database.models import (
+    CalibrationCardEntity,
+    MethodCardEntity,
+    ReviewEntity,
+    UserEntity,
+)
+from backend.database.session import create_session_factory, get_db_type
 from backend.domain.models import CalibrationCard, MethodCard, ReviewRecord
+from backend.mapper.memory_review_mapper import MemoryReviewMapper
 
 
 class ReviewMapper:
-    _reviews: dict[str, dict[str, ReviewRecord]] = {}
-    _methods: dict[str, dict[str, MethodCard]] = {}
-    _calibrations: dict[str, dict[str, CalibrationCard]] = {}
+    def __init__(self):
+        if get_db_type() == "postgres":
+            self._impl = PostgresReviewMapper()
+        else:
+            self._impl = MemoryReviewMapper()
 
     def save_review(self, record: ReviewRecord, user_id: str) -> ReviewRecord:
-        self._ensure_seeded(user_id)
-        self._reviews.setdefault(user_id, {})[record.id] = record
+        return self._impl.save_review(record, user_id)
+
+    def get_review(self, review_id: str, user_id: str) -> ReviewRecord | None:
+        return self._impl.get_review(review_id, user_id)
+
+    def list_reviews(self, user_id: str) -> list[ReviewRecord]:
+        return self._impl.list_reviews(user_id)
+
+    def save_method(self, card: MethodCard, user_id: str) -> MethodCard:
+        return self._impl.save_method(card, user_id)
+
+    def list_methods(self, user_id: str) -> list[MethodCard]:
+        return self._impl.list_methods(user_id)
+
+    def save_calibration(self, card: CalibrationCard, user_id: str) -> CalibrationCard:
+        return self._impl.save_calibration(card, user_id)
+
+    def list_calibrations(self, user_id: str) -> list[CalibrationCard]:
+        return self._impl.list_calibrations(user_id)
+
+    def update_note(self, review_id: str, note: str, user_id: str) -> None:
+        self._impl.update_note(review_id, note, user_id)
+
+    def delete_review(self, review_id: str, user_id: str) -> bool:
+        return self._impl.delete_review(review_id, user_id)
+
+    def delete_method(self, method_id: str, user_id: str) -> bool:
+        return self._impl.delete_method(method_id, user_id)
+
+    def delete_calibration(self, calibration_id: str, user_id: str) -> bool:
+        return self._impl.delete_calibration(calibration_id, user_id)
+
+
+class PostgresReviewMapper:
+    def __init__(self, session_factory: sessionmaker | None = None):
+        init_database()
+        self.session_factory = session_factory or create_session_factory()
+
+    def save_review(self, record: ReviewRecord, user_id: str) -> ReviewRecord:
+        with self.session_factory() as session:
+            self._ensure_seeded(session, user_id)
+            entity = session.get(ReviewEntity, record.id)
+            if entity is None:
+                entity = ReviewEntity(id=record.id, user_id=user_id)
+                session.add(entity)
+            entity.type = record.type
+            entity.scene = record.scene
+            entity.title = record.title
+            entity.raw_input = record.raw_input
+            entity.summary_json = record.summary
+            entity.deep_review_json = record.deep_review
+            entity.result_card_json = record.result_card
+            entity.note = getattr(record, "note", "")
+            entity.saved_to_method_library = record.saved_to_method_library
+            entity.saved_to_calibration = record.saved_to_calibration
+            entity.created_at = _parse_datetime(record.created_at)
+            entity.updated_at = _parse_datetime(record.updated_at)
+            session.commit()
         return record
 
     def get_review(self, review_id: str, user_id: str) -> ReviewRecord | None:
-        self._ensure_seeded(user_id)
-        return self._reviews.get(user_id, {}).get(review_id)
+        with self.session_factory() as session:
+            self._ensure_seeded(session, user_id)
+            entity = (
+                session.query(ReviewEntity)
+                .filter(
+                    ReviewEntity.id == review_id,
+                    ReviewEntity.user_id == user_id,
+                    ReviewEntity.deleted_at.is_(None),
+                )
+                .one_or_none()
+            )
+            return _review_to_domain(entity) if entity else None
 
     def list_reviews(self, user_id: str) -> list[ReviewRecord]:
-        self._ensure_seeded(user_id)
-        return list(self._reviews.get(user_id, {}).values())
+        with self.session_factory() as session:
+            self._ensure_seeded(session, user_id)
+            entities = (
+                session.query(ReviewEntity)
+                .filter(ReviewEntity.user_id == user_id, ReviewEntity.deleted_at.is_(None))
+                .order_by(ReviewEntity.created_at.desc())
+                .all()
+            )
+            return [_review_to_domain(entity) for entity in entities]
 
     def save_method(self, card: MethodCard, user_id: str) -> MethodCard:
-        self._ensure_seeded(user_id)
-        self._methods.setdefault(user_id, {})[card.id] = card
+        with self.session_factory() as session:
+            self._ensure_seeded(session, user_id)
+            entity = session.get(MethodCardEntity, card.id)
+            if entity is None:
+                entity = MethodCardEntity(id=card.id, user_id=user_id)
+                session.add(entity)
+            entity.source_review_id = card.source_review_id
+            entity.title = card.title
+            entity.scenes_json = card.scenes
+            entity.trigger = card.trigger
+            entity.steps_json = card.steps
+            entity.reminder = card.reminder
+            entity.created_at = _parse_datetime(card.created_at)
+            entity.updated_at = _parse_datetime(card.updated_at)
+            session.commit()
         return card
 
     def list_methods(self, user_id: str) -> list[MethodCard]:
-        self._ensure_seeded(user_id)
-        return list(self._methods.get(user_id, {}).values())
+        with self.session_factory() as session:
+            self._ensure_seeded(session, user_id)
+            entities = (
+                session.query(MethodCardEntity)
+                .filter(MethodCardEntity.user_id == user_id)
+                .order_by(MethodCardEntity.created_at.desc())
+                .all()
+            )
+            return [_method_to_domain(entity) for entity in entities]
 
     def save_calibration(self, card: CalibrationCard, user_id: str) -> CalibrationCard:
-        self._ensure_seeded(user_id)
-        self._calibrations.setdefault(user_id, {})[card.id] = card
+        with self.session_factory() as session:
+            self._ensure_seeded(session, user_id)
+            entity = session.get(CalibrationCardEntity, card.id)
+            if entity is None:
+                entity = CalibrationCardEntity(id=card.id, user_id=user_id)
+                session.add(entity)
+            entity.source_review_id = card.source_review_id
+            entity.worry = card.worry
+            entity.scene = card.scene
+            entity.estimated_probability = card.estimated_probability
+            entity.verification_date = _parse_date(card.verification_date)
+            entity.status = card.status
+            entity.final_result = card.final_result
+            entity.actual_impact = card.actual_impact
+            entity.calibration_conclusion = card.calibration_conclusion
+            session.commit()
         return card
 
     def list_calibrations(self, user_id: str) -> list[CalibrationCard]:
-        self._ensure_seeded(user_id)
-        return list(self._calibrations.get(user_id, {}).values())
-
-    def _ensure_seeded(self, user_id: str) -> None:
-        if user_id in self._reviews:
-            return
-
-        self._reviews[user_id] = {
-            "r1": ReviewRecord(
-                id="r1",
-                type="event",
-                scene="工作",
-                title="接口需求沟通不清导致返工",
-                raw_input="在与后端沟通接口需求时，对字段含义和返回规则理解不一致，导致开发完成后发现问题，需要返工修改。",
-                summary={
-                    "事件摘要": "在与后端沟通接口需求时，对字段含义和返回规则理解不一致，导致开发完成后发现问题，需要返工修改。",
-                    "我的目标": "按时完成接口开发并保证联调顺利通过。",
-                    "实际结果": "返工修改，延误了进度。",
-                    "关键行为": "沟通时没有确认关键字段含义和验收标准。",
-                    "不满意点": "没有在开始开发前把模糊点问清楚。",
-                    "可能影响": "进度延迟，协作效率下降。",
-                },
-                deep_review={
-                    "事实层": "接口字段理解出现偏差，开发完成后才发现双方对字段含义理解不一致。",
-                    "行为层": "开始开发前没有主动确认字段含义、边界情况和验收样例。",
-                    "认知层": "默认自己理解的字段含义就是对方真实想表达的含义。",
-                    "方法层": "缺少一个开发前需求确认清单，尤其是字段含义、异常情况和验收标准的确认流程。",
-                },
-                result_card={
-                    "问题提醒": "问题不只是粗心，而是开始前缺少字段含义和验收标准的确认。",
-                    "下次遇到类似情况，我会": "在正式开发前，先用 5 分钟确认需求关键点。",
-                    "行动步骤": ["先复述我对需求的理解", "确认目标和边界", "确认关键字段含义", "要一个正常样例和异常样例", "明确验收标准"],
-                    "一句提醒自己的话": "开始做之前，先确认清楚，返工的成本更高。",
-                },
-                created_at="2026-05-17",
-                updated_at="2026-05-17",
-                saved_to_method_library=True,
-            ),
-            "r2": ReviewRecord(
-                id="r2",
-                type="anxiety",
-                scene="面试",
-                title="担心面试技术问题答不上来",
-                raw_input="想到即将到来的面试，担心技术问题答不上来，也担心被问到自己不熟悉的大模型或 Agent 问题。",
-                summary={
-                    "焦虑触发点": "想到即将到来的面试，担心技术问题答不上来。",
-                    "我担心的事情": "担心被问到自己不熟悉的大模型或 Agent 问题。",
-                    "最坏剧本": "面试表现很差，被面试官认为能力不足。",
-                    "现实证据": "确实存在部分知识点还不熟，但也已经准备了多个项目和常见问题。",
-                    "可控部分": "继续准备高频问题，整理项目话术，练习结构化表达。",
-                    "不可控部分": "面试官具体问什么、对方评价标准、最终结果。",
-                },
-                deep_review={
-                    "触发点": "想到即将进行的面试，开始反复推演失败场景。",
-                    "担心内容": "担心被问到完全不会的问题，导致面试失败。",
-                    "证据检查": "支持证据是仍有部分知识点不熟；反对证据是已经有项目经验，也准备过多个常见问题。",
-                    "概率校准": "焦虑时可能把失败概率估计为 80%，但实际更合理的判断可能是 40% 到 50%。",
-                    "可控行动": "继续准备技术选型、大模型基础、Agent 编排、项目链路等高频问题。",
-                    "安顿策略": "把焦虑转化为 30 分钟的具体准备任务，完成后停止反复推演最坏结果。",
-                },
-                result_card={
-                    "核心担心": "担心面试中被问到不会的问题，从而被认为能力不足。",
-                    "现实检查": "这个担心有一定现实依据，但目前证据不足以说明最坏结果一定会发生。",
-                    "最小可控行动": "准备 5 个高频技术问题，并练习用结构化方式回答。",
-                    "需要放下的不可控部分": "面试官具体问什么、对方主观评价、最终结果。",
-                    "下次提醒自己的话": "焦虑不是预测结果，它只是提醒我有事情需要准备。",
-                },
-                created_at="2026-05-16",
-                updated_at="2026-05-16",
-                saved_to_calibration=True,
-            ),
-            "r3": ReviewRecord(
-                id="r3",
-                type="event",
-                scene="学习",
-                title="学习计划执行不下去",
-                raw_input="计划太大太模糊，缺少具体执行步骤和反馈机制。",
-                summary={"事件摘要": "学习目标过大，执行动作不够具体。"},
-                deep_review={"方法层": "缺少把目标拆成 30 分钟动作的执行清单。"},
-                result_card={"一句提醒自己的话": "先把任务缩小到今天能完成的一步。"},
-                created_at="2026-05-15",
-                updated_at="2026-05-15",
-            ),
-        }
-
-        self._methods[user_id] = {
-            "m1": MethodCard(
-                id="m1",
-                source_review_id="r1",
-                title="开发前需求确认卡",
-                scenes=["工作", "开发", "需求沟通"],
-                trigger="准备开始写接口或修改逻辑前",
-                steps=["复述我对需求的理解", "确认目标和边界", "确认关键字段含义", "要一个正常样例和异常样例", "明确验收标准"],
-                reminder="开始做之前，先确认清楚，返工的成本更高。",
-                created_at="2026-05-17",
-                updated_at="2026-05-17",
+        with self.session_factory() as session:
+            self._ensure_seeded(session, user_id)
+            entities = (
+                session.query(CalibrationCardEntity)
+                .filter(CalibrationCardEntity.user_id == user_id)
+                .order_by(CalibrationCardEntity.verification_date.desc())
+                .all()
             )
-        }
+            return [_calibration_to_domain(entity) for entity in entities]
 
-        self._calibrations[user_id] = {
-            "c1": CalibrationCard(
-                id="c1",
-                source_review_id="r2",
-                worry="担心面试技术问题答不上来",
-                scene="面试",
-                estimated_probability="80%",
-                verification_date="2026-05-25",
-                status="pending",
-            ),
-            "c2": CalibrationCard(
-                id="c2",
-                source_review_id="r2",
-                worry="担心面试一定表现很差",
-                scene="面试",
-                estimated_probability="80%",
-                verification_date="2026-05-12",
-                status="verified",
-                final_result="部分发生，但没有想象中严重",
-                actual_impact="中等",
-                calibration_conclusion="当时高估了失败概率，也高估了失败后果。下次应把焦虑转化为具体准备任务，而不是反复推演最坏结果。",
-            ),
-        }
+    def update_note(self, review_id: str, note: str, user_id: str) -> None:
+        with self.session_factory() as session:
+            self._ensure_seeded(session, user_id)
+            entity = (
+                session.query(ReviewEntity)
+                .filter(
+                    ReviewEntity.id == review_id,
+                    ReviewEntity.user_id == user_id,
+                    ReviewEntity.deleted_at.is_(None),
+                )
+                .one_or_none()
+            )
+            if entity is not None:
+                entity.note = note
+                entity.updated_at = datetime.utcnow()
+                session.commit()
+
+    def delete_review(self, review_id: str, user_id: str) -> bool:
+        with self.session_factory() as session:
+            self._ensure_seeded(session, user_id)
+            entity = (
+                session.query(ReviewEntity)
+                .filter(
+                    ReviewEntity.id == review_id,
+                    ReviewEntity.user_id == user_id,
+                    ReviewEntity.deleted_at.is_(None),
+                )
+                .one_or_none()
+            )
+            if entity is None:
+                return False
+            entity.deleted_at = datetime.utcnow()
+            entity.updated_at = datetime.utcnow()
+            (
+                session.query(MethodCardEntity)
+                .filter(MethodCardEntity.user_id == user_id, MethodCardEntity.source_review_id == review_id)
+                .delete(synchronize_session=False)
+            )
+            (
+                session.query(CalibrationCardEntity)
+                .filter(CalibrationCardEntity.user_id == user_id, CalibrationCardEntity.source_review_id == review_id)
+                .delete(synchronize_session=False)
+            )
+            session.commit()
+            return True
+
+    def delete_method(self, method_id: str, user_id: str) -> bool:
+        with self.session_factory() as session:
+            self._ensure_seeded(session, user_id)
+            deleted = (
+                session.query(MethodCardEntity)
+                .filter(MethodCardEntity.id == method_id, MethodCardEntity.user_id == user_id)
+                .delete(synchronize_session=False)
+            )
+            session.commit()
+            return deleted > 0
+
+    def delete_calibration(self, calibration_id: str, user_id: str) -> bool:
+        with self.session_factory() as session:
+            self._ensure_seeded(session, user_id)
+            deleted = (
+                session.query(CalibrationCardEntity)
+                .filter(CalibrationCardEntity.id == calibration_id, CalibrationCardEntity.user_id == user_id)
+                .delete(synchronize_session=False)
+            )
+            session.commit()
+            return deleted > 0
+
+    @staticmethod
+    def _ensure_user(session: Any, user_id: str) -> None:
+        if session.get(UserEntity, user_id) is None:
+            session.add(UserEntity(id=user_id, nickname="me"))
+            session.flush()
+
+    def _ensure_seeded(self, session: Any, user_id: str) -> None:
+        self._ensure_user(session, user_id)
+        session.commit()
+
+
+def _parse_datetime(value: str | datetime | None) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        return datetime.utcnow()
+    try:
+        parsed_date = date.fromisoformat(value)
+        return datetime.combine(parsed_date, time.min)
+    except ValueError:
+        return datetime.fromisoformat(value)
+
+
+def _parse_date(value: str | date | None) -> date | None:
+    if isinstance(value, date):
+        return value
+    if not value:
+        return None
+    return date.fromisoformat(value)
+
+
+def _format_datetime(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    return value.replace(microsecond=0).isoformat()
+
+
+def _format_date(value: date | None) -> str:
+    return value.isoformat() if value else ""
+
+
+def _review_to_domain(entity: ReviewEntity) -> ReviewRecord:
+    return ReviewRecord(
+        id=entity.id,
+        type=entity.type,
+        scene=entity.scene,
+        title=entity.title,
+        raw_input=entity.raw_input,
+        summary=entity.summary_json or {},
+        deep_review=entity.deep_review_json or {},
+        result_card=entity.result_card_json or {},
+        note=entity.note or "",
+        created_at=_format_datetime(entity.created_at),
+        updated_at=_format_datetime(entity.updated_at),
+        saved_to_method_library=entity.saved_to_method_library,
+        saved_to_calibration=entity.saved_to_calibration,
+    )
+
+
+def _method_to_domain(entity: MethodCardEntity) -> MethodCard:
+    return MethodCard(
+        id=entity.id,
+        source_review_id=entity.source_review_id,
+        title=entity.title,
+        scenes=entity.scenes_json or [],
+        trigger=entity.trigger,
+        steps=entity.steps_json or [],
+        reminder=entity.reminder,
+        created_at=_format_datetime(entity.created_at),
+        updated_at=_format_datetime(entity.updated_at),
+    )
+
+
+def _calibration_to_domain(entity: CalibrationCardEntity) -> CalibrationCard:
+    return CalibrationCard(
+        id=entity.id,
+        source_review_id=entity.source_review_id,
+        worry=entity.worry,
+        scene=entity.scene,
+        estimated_probability=entity.estimated_probability,
+        verification_date=_format_date(entity.verification_date),
+        status=entity.status,
+        final_result=entity.final_result,
+        actual_impact=entity.actual_impact,
+        calibration_conclusion=entity.calibration_conclusion,
+    )

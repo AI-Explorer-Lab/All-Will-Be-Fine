@@ -1,15 +1,17 @@
 environment: local
 
 db:
-  type: memory
-  url: sqlite:///review_mvp.db
+  type: postgres
+  url: postgresql+psycopg2://review_user:review_password@127.0.0.1:5432/review_app
 
 agent:
-  provider: anyrouter
-  base_url: https://anyrouter.top/v1
-  api_key_env: ANYROUTER_API_KEY
+  provider: rightcode
+  base_url: https://www.right.codes/codex/v1
+  api_key: 
+  api_key_env: OPENAI_API_KEY
   use_responses_api: true
-  model: gpt-5.5
+  stream: true
+  model: gpt-5.2
   http_proxy: http://127.0.0.1:7897
   https_proxy: http://127.0.0.1:7897
-  no_proxy: 127.0.0.1,localhost
+  no_proxy: 127.0.0.1,localhost,right.codes,www.right.codes
