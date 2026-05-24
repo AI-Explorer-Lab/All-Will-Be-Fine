@@ -32,6 +32,7 @@ const state = {
       reality: "",
       action: "",
       reminder: "",
+      verificationDate: "",
     },
   },
   filter: "全部",
@@ -75,6 +76,15 @@ const icons = {
 function setState(next) {
   Object.assign(state, next);
   render();
+}
+
+function clearEditingState(next = {}) {
+  return {
+    editingRecordId: null,
+    editingMethodId: null,
+    editingCalibrationId: null,
+    ...next,
+  };
 }
 
 function notify(message) {
@@ -177,12 +187,14 @@ function startManualReview() {
 }
 
 function normalizeBundle(bundle) {
-  return {
+  const normalized = {
     record: normalizeRecord(bundle.record),
     methodCard: bundle.method_card ? normalizeMethod(bundle.method_card) : null,
     calibrationCard: bundle.calibration_card ? normalizeCalibration(bundle.calibration_card) : null,
     warnings: bundle.warnings || [],
   };
+  applyDraftVerificationDate(normalized);
+  return normalized;
 }
 
 function normalizeRecord(record) {
@@ -242,6 +254,55 @@ function normalizeCalibration(card) {
 function firstValue(object) {
   const value = Object.values(object || {})[0];
   return Array.isArray(value) ? value[0] : value;
+}
+
+function searchableText(value) {
+  if (Array.isArray(value)) return value.map(searchableText).join(" ");
+  if (value && typeof value === "object") return Object.values(value).map(searchableText).join(" ");
+  return String(value || "");
+}
+
+function normalizedSearchText(value) {
+  return searchableText(value).replace(/\s+/g, "").toLowerCase();
+}
+
+function calibrationMatchesRecord(card = {}, record = {}, id = "") {
+  if (!record.id) return false;
+  const sourceReviewId = card.sourceReviewId || String(id || "").replace(/^derived-calibration-/, "");
+  if (sourceReviewId && record.id === sourceReviewId) return true;
+
+  const worryText = normalizedSearchText(card.worry);
+  if (!worryText) return false;
+
+  const recordText = normalizedSearchText([
+    record.title,
+    record.rawInput,
+    record.conclusion,
+    record.summary,
+    record.resultCard,
+  ]);
+  return recordText.includes(worryText) || worryText.includes(normalizedSearchText(record.title));
+}
+
+function findRecordForCalibration(card = {}, id = "") {
+  const sourceReviewId = card.sourceReviewId || String(id || "").replace(/^derived-calibration-/, "");
+  if (sourceReviewId) {
+    const direct = store.records.find((record) => record.id === sourceReviewId);
+    if (direct) return direct;
+  }
+
+  const worryText = normalizedSearchText(card.worry);
+  const candidates = store.records.filter((record) => record.type === "anxiety");
+  if (worryText) {
+    const matched = candidates.find((record) => calibrationMatchesRecord(card, record, id));
+    if (matched) return matched;
+  }
+
+  const sameScene = candidates.filter((record) => record.savedToCalibration && record.scene === card.scene);
+  if (sameScene.length === 1) return sameScene[0];
+
+  const savedCandidates = candidates.filter((record) => record.savedToCalibration);
+  return savedCandidates.length === 1 ? savedCandidates[0] : null;
 }
 
 function upsertRecord(record) {
@@ -438,6 +499,18 @@ function currentDraftFields() {
   return state.draftFields[state.mode];
 }
 
+function draftVerificationDate() {
+  return String(state.draftFields.anxiety.verificationDate || "").trim();
+}
+
+function applyDraftVerificationDate(bundle) {
+  const date = draftVerificationDate();
+  if (state.mode === "anxiety" && date && bundle?.calibrationCard) {
+    bundle.calibrationCard.verificationDate = date;
+  }
+  return bundle;
+}
+
 function splitLines(value) {
   return String(value || "")
     .split(/\r?\n/)
@@ -518,7 +591,7 @@ function buildLocalBundle(rawInput, mode, scene) {
       worry: record.title,
       scene,
       estimatedProbability: "80%",
-      verificationDate: "",
+      verificationDate: draftVerificationDate(),
       status: "pending",
     }) : null,
   };
@@ -559,6 +632,9 @@ function buildManualBundle(rawInput, mode, scene, fields = currentDraftFields())
       我能做什么: actionSteps,
       提醒自己: reminder,
     };
+    if (bundle.calibrationCard) {
+      bundle.calibrationCard.verificationDate = fields.verificationDate || draftVerificationDate();
+    }
   }
   bundle.record.conclusion = rawInput;
   return bundle;
@@ -626,7 +702,7 @@ function calibrationFromRecord(record) {
 function calibrationCardsForPage() {
   const merged = new Map(store.calibrations.map((card) => [card.id, card]));
   store.records
-    .filter((record) => record.type === "anxiety")
+    .filter((record) => record.type === "anxiety" && record.savedToCalibration)
     .forEach((record) => {
       if (!findCalibrationForRecord(record)) {
         const card = calibrationFromRecord(record);
@@ -830,6 +906,12 @@ function structuredDraftForm(mode) {
           </label>
         `).join("")}
       </div>
+      ${mode === "anxiety" ? `
+        <label class="draft-field draft-date-field">
+          <span>验证日期</span>
+          <input type="date" data-draft-field="verificationDate" value="${escapeHtml(fields.verificationDate || "")}" />
+        </label>
+      ` : ""}
     </div>
   `;
 }
@@ -979,7 +1061,6 @@ function summaryPage() {
 function resultPage() {
   const record = currentRecord();
   const title = state.mode === "event" ? "行动卡" : "焦虑校准卡";
-  const calibration = state.mode === "anxiety" ? (state.currentBundle?.calibrationCard || findCalibrationForRecord(record)) : null;
   return shell(`
     <main class="content-page narrow-page">
       <div class="page-header"><h1>${title}</h1></div>
@@ -989,12 +1070,6 @@ function resultPage() {
         ${state.mode === "event"
           ? `<button class="primary-button" data-save-record-ask-method ${state.saving ? "disabled" : ""}>${state.saving ? "保存中..." : "保存记录"}</button>`
           : `<button class="primary-button" data-save-bundle="calibration" ${state.saving ? "disabled" : ""}>${state.saving ? "保存中..." : "保存记录"}</button>`}
-        ${state.mode === "anxiety" ? `
-          <label class="date-picker">验证日期
-            <input type="date" data-result-verification-date value="${escapeHtml(calibration?.verificationDate || "")}" />
-          </label>
-          <button class="ghost-button" data-save-result-verification="${calibration?.id || ""}">保存验证日期</button>
-        ` : ""}
       </div>
       ${state.followUp ? followUpPanel(state.followUp) : ""}
       ${state.saveDialogOpen ? saveMethodDialog() : ""}
@@ -1097,11 +1172,18 @@ function methodsPage() {
 }
 
 function calibrationPage() {
-  const cards = calibrationCardsForPage().filter((card) => card.status === state.calibrationTab && matchesQuery([card.worry, card.scene, card.calibrationConclusion]));
+  const filters = ["全部", "工作", "学习", "面试", "人际", "决策", "生活", "其他", "健康", "未来"];
+  const activeFilter = filters.includes(state.filter) ? state.filter : "全部";
+  const cards = calibrationCardsForPage().filter((card) => (
+    card.status === state.calibrationTab
+    && (activeFilter === "全部" || card.scene === activeFilter)
+    && matchesQuery([card.worry, card.scene, card.calibrationConclusion])
+  ));
   return shell(`
     <main class="content-page">
       <h1 class="list-title">焦虑校准</h1>
       <div class="flow-tabs small-tabs"><button class="${state.calibrationTab === "pending" ? "active" : ""}" data-cal-tab="pending">待验证</button><button class="${state.calibrationTab === "verified" ? "active" : ""}" data-cal-tab="verified">已验证</button></div>
+      ${filterRow(filters, activeFilter)}
       <div class="card-list">${cards.map(calibrationCard).join("") || emptyState("没有找到匹配的校准卡")}</div>
     </main>
   `);
@@ -1111,10 +1193,17 @@ function detailPage() {
   const record = store.records.find((item) => item.id === state.selectedRecordId) || store.records[0];
   const mode = record.type;
   if (state.editingRecordId === record.id) return detailEditPage(record);
+  const titleParts = splitDetailTitle(record.title);
   return shell(`
     <main class="content-page detail-page">
       ${pageHeader("详情", "records")}
-      <section class="detail-hero"><h1>${record.title}</h1><p>${escapeHtml(record.scene)}<span>${displayDate(record.date, { full: true })}</span></p></section>
+      <section class="detail-hero">
+        <div class="detail-hero-title">
+          <h1>${escapeHtml(titleParts.main)}</h1>
+          ${titleParts.aside ? `<b>${escapeHtml(titleParts.aside)}</b>` : ""}
+        </div>
+        <p><span>${escapeHtml(record.scene)}</span><span>${displayDate(record.date, { full: true })}</span></p>
+      </section>
       ${fieldGrid([
         ["原始输入", record.rawInput],
         ...detailHighlights(record, mode),
@@ -1127,6 +1216,14 @@ function detailPage() {
       </div>
     </main>
   `);
+}
+
+function splitDetailTitle(title) {
+  const parts = String(title || "").split(/\s*[|｜]\s*/).filter(Boolean);
+  return {
+    main: parts[0] || title || "",
+    aside: parts.slice(1).join(" | "),
+  };
 }
 
 function detailHighlights(record, mode) {
@@ -1248,8 +1345,8 @@ function editableControls(section, fields) {
   `).join("");
 }
 
-function filterRow(filters) {
-  return `<div class="filters">${filters.map((item) => `<button class="chip ${state.filter === item ? "selected" : ""}" data-filter="${item}">${item}</button>`).join("")}</div>`;
+function filterRow(filters, selected = state.filter) {
+  return `<div class="filters">${filters.map((item) => `<button class="chip ${selected === item ? "selected" : ""}" data-filter="${item}">${item}</button>`).join("")}</div>`;
 }
 
 function recordCard(record) {
@@ -1327,11 +1424,10 @@ function calibrationCard(card) {
   if (state.editingCalibrationId === card.id) return calibrationEditCard(card);
   const verified = card.status === "verified";
   return `
-    <article class="list-card calibration-card">
+    <article class="list-card calibration-card" data-edit-calibration="${card.id}" tabindex="0" title="点击编辑">
       <div class="card-title-row">
         <h3>${escapeHtml(card.worry)}</h3>
         <div class="inline-actions">
-          <button class="text-button" data-edit-calibration="${card.id}">编辑</button>
           <button class="text-button danger-text" data-delete-calibration="${card.id}">删除</button>
         </div>
       </div>
@@ -1512,22 +1608,14 @@ function saveCalibration(id) {
   notify("校准卡已更新");
 }
 
-function saveResultVerification(calibrationId) {
-  const input = app.querySelector("[data-result-verification-date]");
-  const record = currentRecord();
-  const card = store.calibrations.find((item) => item.id === calibrationId)
-    || (state.currentBundle?.calibrationCard?.id === calibrationId ? state.currentBundle.calibrationCard : null)
-    || findCalibrationForRecord(record);
-  if (!input || !card) return;
-  syncFieldValue(card.verificationDate, input.value);
-  card.verificationDate = input.value;
-  notify(input.value ? "验证日期已更新" : "已清空验证日期");
-}
-
 function localDeleteRecord(id) {
+  const deletedRecord = store.records.find((item) => item.id === id);
   store.records = store.records.filter((item) => item.id !== id);
   store.methods = store.methods.filter((item) => item.sourceReviewId !== id && item.source !== id);
-  store.calibrations = store.calibrations.filter((item) => item.sourceReviewId !== id);
+  store.calibrations = store.calibrations.filter((item) => (
+    item.sourceReviewId !== id
+    && (!deletedRecord || !calibrationMatchesRecord(item, deletedRecord, item.id))
+  ));
   if (state.selectedRecordId === id) state.selectedRecordId = store.records[0]?.id || "";
   if (state.currentBundle?.record?.id === id) state.currentBundle = null;
 }
@@ -1538,11 +1626,21 @@ function localDeleteMethod(id) {
 }
 
 function localDeleteCalibration(id) {
-  store.calibrations = store.calibrations.filter((item) => item.id !== id);
+  const deletedCard = store.calibrations.find((item) => item.id === id) || {};
+  const sourceReviewId = deletedCard.sourceReviewId || String(id || "").replace(/^derived-calibration-/, "");
+  const sourceRecord = findRecordForCalibration(deletedCard, id);
+  if (sourceRecord) {
+    localDeleteRecord(sourceRecord.id);
+  } else {
+    store.calibrations = store.calibrations.filter((item) => item.id !== id && item.sourceReviewId !== sourceReviewId);
+  }
   if (state.editingCalibrationId === id) state.editingCalibrationId = null;
 }
 
 async function deleteResource(kind, id) {
+  const linkedRecord = kind === "calibration"
+    ? findRecordForCalibration(store.calibrations.find((item) => item.id === id) || {}, id)
+    : null;
   const pathByKind = {
     record: `/reviews/${id}`,
     method: `/methods/${id}`,
@@ -1555,6 +1653,9 @@ async function deleteResource(kind, id) {
   };
   try {
     await request(pathByKind[kind], { method: "DELETE" });
+    if (kind === "calibration" && linkedRecord?.id) {
+      await request(`/reviews/${linkedRecord.id}`, { method: "DELETE" });
+    }
     state.apiOnline = true;
   } catch (error) {
     state.apiOnline = false;
@@ -1563,7 +1664,7 @@ async function deleteResource(kind, id) {
   const route = kind === "record" ? "records" : kind === "method" ? "methods" : "calibration";
   const tab = kind === "record" ? "records" : kind === "method" ? "methods" : "calibration";
   setState({ route, tab });
-  notify(kind === "record" ? "记录已删除" : kind === "method" ? "方法卡已删除" : "校准卡已删除");
+  notify(kind === "record" ? "记录已删除" : kind === "method" ? "方法卡已删除" : "校准卡和对应记录已删除");
 }
 
 async function requestFollowUp(reviewId) {
@@ -1609,7 +1710,7 @@ function buildLocalFollowUp(record) {
 }
 
 app.addEventListener("click", async (event) => {
-  const target = event.target.closest("button, article[data-detail]");
+  const target = event.target.closest("button, article[data-detail], article[data-edit-calibration]");
   if (!target) return;
 
   if (target.dataset.toast) {
@@ -1653,11 +1754,6 @@ app.addEventListener("click", async (event) => {
 
   if (target.dataset.saveCalibration) {
     saveCalibration(target.dataset.saveCalibration);
-    return;
-  }
-
-  if (target.dataset.saveResultVerification !== undefined) {
-    saveResultVerification(target.dataset.saveResultVerification);
     return;
   }
 
@@ -1756,14 +1852,14 @@ app.addEventListener("click", async (event) => {
 
   if (target.dataset.route) {
     const tabByRoute = { home: "review", records: "records", methods: "methods", calibration: "calibration" };
-    setState({ route: target.dataset.route, tab: tabByRoute[target.dataset.route] || state.tab });
+    setState(clearEditingState({ route: target.dataset.route, tab: tabByRoute[target.dataset.route] || state.tab }));
     return;
   }
 
   if (target.dataset.tab) {
     const tab = target.dataset.tab;
     const routeByTab = { review: "home", records: "records", methods: "methods", calibration: "calibration" };
-    setState({ tab, route: routeByTab[tab], filter: "全部" });
+    setState(clearEditingState({ tab, route: routeByTab[tab], filter: "全部" }));
     return;
   }
 
@@ -1801,6 +1897,14 @@ app.addEventListener("click", async (event) => {
   if (target.dataset.detail) {
     setState({ selectedRecordId: target.dataset.detail, route: "detail" });
   }
+});
+
+app.addEventListener("keydown", (event) => {
+  if (event.target.closest("button, input, textarea, select")) return;
+  const target = event.target.closest("article[data-edit-calibration]");
+  if (!target || (event.key !== "Enter" && event.key !== " ")) return;
+  event.preventDefault();
+  setState({ editingCalibrationId: target.dataset.editCalibration });
 });
 
 app.addEventListener("input", (event) => {
