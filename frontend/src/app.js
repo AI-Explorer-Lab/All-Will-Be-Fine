@@ -1114,7 +1114,7 @@ function detailPage() {
   return shell(`
     <main class="content-page detail-page">
       ${pageHeader("详情", "records")}
-      <section class="detail-hero"><h1>${record.title}</h1><p>${typeText(mode)} · ${record.scene}<span>${displayDate(record.date, { full: true })}</span></p></section>
+      <section class="detail-hero"><h1>${record.title}</h1><p>${escapeHtml(record.scene)}<span>${displayDate(record.date, { full: true })}</span></p></section>
       ${fieldGrid([
         ["原始输入", record.rawInput],
         ...detailHighlights(record, mode),
@@ -1258,7 +1258,7 @@ function recordCard(record) {
   return `
     <article class="list-card record-list-card" data-detail="${record.id}">
       <div class="card-title-row">
-        <div><h3>${escapeHtml(record.title)}</h3><p>${typeText(record.type)} · ${escapeHtml(record.scene)} · ${displayDate(record.date, { full: true })}</p></div>
+        <div class="record-title-stack"><h3>${escapeHtml(record.title)}</h3><p class="record-meta">${escapeHtml(record.scene)} · ${displayDate(record.date, { full: true })}</p></div>
         <button class="text-button danger-text" data-delete-record="${record.id}">删除</button>
       </div>
       <div class="record-preview">
