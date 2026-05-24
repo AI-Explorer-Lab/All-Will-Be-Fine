@@ -1,6 +1,5 @@
 const {
   calibrationCards: fallbackCalibrationCards,
-  deepReviewTemplates,
   methodCards: fallbackMethodCards,
   resultCards,
   reviewRecords: fallbackReviewRecords,
@@ -23,6 +22,18 @@ const state = {
   mode: "event",
   scene: "工作",
   draft: "",
+  draftFields: {
+    event: {
+      improvement: "",
+      next: "",
+      reminder: "",
+    },
+    anxiety: {
+      reality: "",
+      action: "",
+      reminder: "",
+    },
+  },
   filter: "全部",
   query: "",
   calibrationTab: "pending",
@@ -33,9 +44,14 @@ const state = {
   currentBundle: null,
   followUp: null,
   loading: false,
+  saving: false,
   followUpLoading: false,
+  saveDialogOpen: false,
+  searchComposing: false,
   apiOnline: false,
   toast: "",
+  calendarMonth: localDateKey().slice(0, 7),
+  calendarExpanded: false,
 };
 
 const navItems = [
@@ -124,8 +140,8 @@ async function hydrateFromBackend() {
 }
 
 async function analyzeDraft() {
-  const rawInput = state.draft.trim();
-  if (!rawInput) {
+  const rawInput = composeDraftInput();
+  if (!state.draft.trim()) {
     notify("先写下一点内容，再开始整理");
     return;
   }
@@ -134,25 +150,30 @@ async function analyzeDraft() {
   try {
     const bundle = await request("/reviews/analyze", {
       method: "POST",
-      body: JSON.stringify({ type: state.mode, scene: state.scene, raw_input: rawInput }),
+      body: JSON.stringify({ type: state.mode, scene: state.scene, raw_input: rawInput, persist: false }),
     });
     const normalized = normalizeBundle(bundle);
     state.currentBundle = normalized;
     state.followUp = null;
-    upsertRecord(normalized.record);
-    if (normalized.methodCard) upsertMethod(normalized.methodCard);
-    if (normalized.calibrationCard) upsertCalibration(normalized.calibrationCard);
-    setState({ loading: false, route: "summary", apiOnline: true });
-    notify(normalized.warnings.length ? normalized.warnings[0] : "已调用 AI 生成整理结果");
+    setState({ loading: false, route: "result", apiOnline: true });
+    notify(normalized.warnings.length ? normalized.warnings[0] : "已生成行动卡");
   } catch (error) {
     const fallback = buildLocalBundle(rawInput, state.mode, state.scene);
     state.currentBundle = fallback;
-    upsertRecord(fallback.record);
-    if (fallback.methodCard) upsertMethod(fallback.methodCard);
-    if (fallback.calibrationCard) upsertCalibration(fallback.calibrationCard);
-    setState({ loading: false, route: "summary", apiOnline: false });
+    setState({ loading: false, route: "result", apiOnline: false });
     notify("后端未连接，已用本地结果继续流程");
   }
+}
+
+function startManualReview() {
+  const rawInput = state.draft.trim();
+  if (!rawInput) {
+    notify("先写下一点内容，再开始复盘");
+    return;
+  }
+  state.currentBundle = buildManualBundle(rawInput, state.mode, state.scene, currentDraftFields());
+  state.followUp = null;
+  setState({ route: "result", tab: "review" });
 }
 
 function normalizeBundle(bundle) {
@@ -176,10 +197,9 @@ function normalizeRecord(record) {
     scene: record.scene || "其他",
     title: record.title || (type === "event" ? "新的事件复盘" : "新的焦虑复盘"),
     date: createdAt,
-    shortDate: createdAt.slice(5),
+    shortDate: displayDate(createdAt),
     rawInput: record.raw_input || record.rawInput || "",
     summary: record.summary || {},
-    deepReview: record.deep_review || record.deepReview || {},
     resultCard,
     conclusion: record.conclusion || firstValue(resultCard) || "已生成一张可执行的复盘卡。",
     note: record.note || record.myNote || "这次复盘让我意识到：确认步骤要前置。",
@@ -197,7 +217,9 @@ function normalizeMethod(card) {
     scenes: card.scenes || [],
     trigger: card.trigger || "",
     steps: card.steps || [],
+    reminder: card.reminder || "",
     source: card.source || card.source_review_id || "当前复盘",
+    createdAt: card.created_at || card.createdAt || "2026-05-18",
     updatedAt: card.updated_at || card.updatedAt || card.created_at || "2026-05-18",
   };
 }
@@ -234,6 +256,97 @@ function upsertCalibration(card) {
   store.calibrations = [card, ...store.calibrations.filter((item) => item.id !== card.id)];
 }
 
+function bundlePayload(bundle) {
+  const includeMethod = Boolean(bundle.includeMethodCard);
+  const includeCalibration = Boolean(bundle.includeCalibrationCard);
+  return {
+    record: {
+      id: bundle.record.id,
+      type: bundle.record.type,
+      scene: bundle.record.scene,
+      title: bundle.record.title,
+      raw_input: bundle.record.rawInput,
+      summary: bundle.record.summary,
+      result_card: bundle.record.resultCard,
+      note: bundle.record.note || "",
+      created_at: bundle.record.date,
+      updated_at: localDateKey(),
+      saved_to_method_library: includeMethod,
+      saved_to_calibration: includeCalibration,
+    },
+    method_card: includeMethod && bundle.methodCard ? {
+      id: bundle.methodCard.id,
+      source_review_id: bundle.record.id,
+      title: bundle.methodCard.title,
+      scenes: bundle.methodCard.scenes,
+      trigger: bundle.methodCard.trigger,
+      steps: bundle.methodCard.steps,
+      reminder: bundle.methodCard.reminder || "",
+      created_at: bundle.methodCard.createdAt || bundle.record.date,
+      updated_at: localDateKey(),
+    } : null,
+    calibration_card: includeCalibration && bundle.calibrationCard ? {
+      id: bundle.calibrationCard.id,
+      source_review_id: bundle.record.id,
+      worry: bundle.calibrationCard.worry,
+      scene: bundle.calibrationCard.scene,
+      estimated_probability: bundle.calibrationCard.estimatedProbability,
+      verification_date: bundle.calibrationCard.verificationDate,
+      status: bundle.calibrationCard.status,
+      final_result: bundle.calibrationCard.finalResult,
+      actual_impact: bundle.calibrationCard.actualImpact,
+      calibration_conclusion: bundle.calibrationCard.calibrationConclusion,
+    } : null,
+    warnings: bundle.warnings || [],
+  };
+}
+
+async function persistCurrentBundle(destination = "records", options = {}) {
+  if (!state.currentBundle?.record || state.saving) return;
+  const previousBundle = state.currentBundle;
+  const saveToMethod = destination === "methods";
+  const saveToCalibration = destination === "calibration";
+  state.currentBundle.includeMethodCard = saveToMethod;
+  state.currentBundle.includeCalibrationCard = saveToCalibration;
+  state.currentBundle.record.savedToMethodLibrary = saveToMethod;
+  state.currentBundle.record.savedToCalibration = saveToCalibration;
+  state.currentBundle.record.status = saveToMethod ? "已生成方法卡" : saveToCalibration ? "已加入校准" : "已保存";
+  setState({ saving: true });
+  try {
+    const saved = await request("/reviews/save", {
+      method: "POST",
+      body: JSON.stringify(bundlePayload(state.currentBundle)),
+    });
+    const normalized = normalizeBundle(saved);
+    if (!normalized.methodCard && previousBundle.methodCard) normalized.methodCard = previousBundle.methodCard;
+    if (!normalized.calibrationCard && previousBundle.calibrationCard) normalized.calibrationCard = previousBundle.calibrationCard;
+    normalized.record.status = saveToMethod ? "已生成方法卡" : saveToCalibration ? "已加入校准" : "已保存";
+    normalized.record.savedToMethodLibrary = saveToMethod;
+    normalized.record.savedToCalibration = saveToCalibration;
+    state.currentBundle = normalized;
+    upsertRecord(normalized.record);
+    if (saveToMethod && normalized.methodCard) upsertMethod(normalized.methodCard);
+    if (saveToCalibration && normalized.calibrationCard) upsertCalibration(normalized.calibrationCard);
+    if (options.askMethodLibrary) {
+      setState({ saving: false, saveDialogOpen: true, route: "result", tab: "review", apiOnline: true });
+    } else {
+      setState({ saving: false, saveDialogOpen: false, route: destination, tab: destination === "methods" ? "methods" : destination === "calibration" ? "calibration" : "records", apiOnline: true });
+    }
+    notify(destination === "methods" ? "记录已保存，并同步到方法库" : destination === "calibration" ? "记录已保存，并同步到校准" : "记录已保存");
+  } catch (error) {
+    const normalized = state.currentBundle;
+    upsertRecord(normalized.record);
+    if (normalized.methodCard) upsertMethod(normalized.methodCard);
+    if (normalized.calibrationCard) upsertCalibration(normalized.calibrationCard);
+    if (options.askMethodLibrary) {
+      setState({ saving: false, saveDialogOpen: true, route: "result", tab: "review", apiOnline: false });
+    } else {
+      setState({ saving: false, saveDialogOpen: false, route: destination, tab: destination === "methods" ? "methods" : destination === "calibration" ? "calibration" : "records", apiOnline: false });
+    }
+    notify("后端未连接，已先保存在本地演示数据中");
+  }
+}
+
 function localDateKey(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -254,25 +367,137 @@ function weekStartMonday(date = new Date()) {
   return copy;
 }
 
+function parseMonthKey(monthKey) {
+  const [year, month] = String(monthKey || localDateKey().slice(0, 7)).split("-").map(Number);
+  return new Date(year, month - 1, 1);
+}
+
+function shiftMonth(monthKey, amount) {
+  const date = parseMonthKey(monthKey);
+  date.setMonth(date.getMonth() + amount);
+  return localDateKey(date).slice(0, 7);
+}
+
+function monthOptions(centerMonth) {
+  return Array.from({ length: 7 }, (_, index) => shiftMonth(centerMonth, index - 3));
+}
+
+function monthLabel(monthKey) {
+  const [year, month] = monthKey.split("-");
+  return `${year} 年 ${Number(month)} 月`;
+}
+
+function monthCalendarDays(monthKey) {
+  const first = parseMonthKey(monthKey);
+  const start = weekStartMonday(first);
+  return Array.from({ length: 42 }, (_, index) => addDays(start, index));
+}
+
 function recordDateKey(record) {
   return String(record.date || record.createdAt || "").slice(0, 10);
+}
+
+function displayDate(value, options = {}) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const key = raw.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return raw;
+  if (options.full) return key;
+  return key.slice(5);
 }
 
 function monthDay(date) {
   return localDateKey(date).slice(5);
 }
 
+function fixedSceneTags(mode) {
+  const source = mode ? scenes[mode] : [...scenes.event, ...scenes.anxiety];
+  return [...new Set(source)];
+}
+
+function sceneSelect(currentScene, mode, attr = "data-record-scene") {
+  const options = fixedSceneTags(mode);
+  const value = options.includes(currentScene) ? currentScene : "其他";
+  return `<select ${attr}>${options.map((scene) => `<option value="${escapeHtml(scene)}" ${value === scene ? "selected" : ""}>${escapeHtml(scene)}</option>`).join("")}</select>`;
+}
+
+function methodSelectedTag(card) {
+  const options = fixedSceneTags();
+  const direct = (card.scenes || []).filter((scene) => options.includes(scene));
+  if (direct.length) return direct[0];
+  const sourceRecord = store.records.find((record) => record.id === card.sourceReviewId || record.title === card.source);
+  if (sourceRecord && options.includes(sourceRecord.scene)) return sourceRecord.scene;
+  return "其他";
+}
+
+function methodSceneSelect(card) {
+  return sceneSelect(methodSelectedTag(card), "", "data-method-scene");
+}
+
+function currentDraftFields() {
+  return state.draftFields[state.mode];
+}
+
+function splitLines(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function composeDraftInput() {
+  const base = state.draft.trim();
+  const fields = currentDraftFields();
+  const lines = state.mode === "event"
+    ? [
+        ["发生了什么", base],
+        ["需要改进的地方", fields.improvement],
+        ["下次怎么做", fields.next],
+        ["提醒自己", fields.reminder],
+      ]
+    : [
+        ["我在担心什么", base],
+        ["现实检查", fields.reality],
+        ["我能做什么", fields.action],
+        ["提醒自己", fields.reminder],
+      ];
+  return lines
+    .filter(([, value]) => String(value || "").trim())
+    .map(([label, value]) => `${label}：${String(value).trim()}`)
+    .join("\n");
+}
+
 function buildLocalBundle(rawInput, mode, scene) {
   const today = localDateKey();
+  const eventSteps = ["复述我对事情的理解", "确认目标和边界", "列出关键不确定点", "明确完成标准"];
+  const eventReminder = "开始做之前，先确认清楚，返工和内耗的成本更高。";
+  const anxietyAction = ["写下一个 30 分钟内能完成的小动作", "确认完成标准", "完成后再回来看这张卡"];
+  const anxietyReminder = "焦虑不是预测结果，它只是提醒我有事情需要准备。";
   const record = normalizeRecord({
     id: `local-${Date.now()}`,
     type: mode,
     scene,
     title: rawInput.slice(0, 22) || (mode === "event" ? "新的事件复盘" : "新的焦虑复盘"),
     rawInput,
-    summary: Object.fromEntries(summaryTemplates[mode]),
-    deepReview: Object.fromEntries(deepReviewTemplates[mode]),
-    resultCard: Object.fromEntries(resultCards[mode].fields),
+    summary: mode === "event" ? {
+      发生了什么: rawInput,
+      需要改进的地方: "开始前还需要把目标、边界和验收标准确认得更清楚。",
+      下次怎么做: eventSteps,
+      提醒自己: eventReminder,
+    } : {
+      我在担心什么: rawInput,
+      现实检查: "这个担心有一部分现实依据，但还不能说明最坏结果一定会发生。",
+      我能做什么: anxietyAction,
+      提醒自己: anxietyReminder,
+    },
+    resultCard: mode === "event" ? {
+      需要改进的地方: "开始前还需要把目标、边界和验收标准确认得更清楚。",
+      下次怎么做: eventSteps,
+      提醒自己: eventReminder,
+    } : {
+      我能做什么: anxietyAction,
+      提醒自己: anxietyReminder,
+    },
     createdAt: today,
     savedToMethodLibrary: mode === "event",
     savedToCalibration: mode === "anxiety",
@@ -282,9 +507,9 @@ function buildLocalBundle(rawInput, mode, scene) {
     methodCard: mode === "event" ? normalizeMethod({
       id: `local-method-${Date.now()}`,
       title: "开始前确认卡",
-      scenes: [scene, "复盘"],
+      scenes: [scene],
       trigger: "准备开始处理类似事情前",
-      steps: ["复述理解", "确认目标和边界", "列出不确定点", "确认样例和验收标准"],
+      steps: eventSteps,
       source: record.title,
       updatedAt: today,
     }) : null,
@@ -297,6 +522,46 @@ function buildLocalBundle(rawInput, mode, scene) {
       status: "pending",
     }) : null,
   };
+}
+
+function buildManualBundle(rawInput, mode, scene, fields = currentDraftFields()) {
+  const bundle = buildLocalBundle(rawInput, mode, scene);
+  if (mode === "event") {
+    const nextSteps = splitLines(fields.next);
+    const improvement = fields.improvement.trim();
+    const reminder = fields.reminder.trim();
+    bundle.record.summary = {
+      发生了什么: rawInput,
+      需要改进的地方: improvement,
+      下次怎么做: nextSteps,
+      提醒自己: reminder,
+    };
+    bundle.record.resultCard = {
+      需要改进的地方: improvement,
+      下次怎么做: nextSteps,
+      提醒自己: reminder,
+    };
+    if (bundle.methodCard) {
+      bundle.methodCard.steps = nextSteps;
+      bundle.methodCard.trigger = improvement;
+      bundle.methodCard.reminder = reminder;
+    }
+  } else {
+    const actionSteps = splitLines(fields.action);
+    const reminder = fields.reminder.trim();
+    bundle.record.summary = {
+      我在担心什么: rawInput,
+      现实检查: fields.reality.trim(),
+      我能做什么: actionSteps,
+      提醒自己: reminder,
+    };
+    bundle.record.resultCard = {
+      我能做什么: actionSteps,
+      提醒自己: reminder,
+    };
+  }
+  bundle.record.conclusion = rawInput;
+  return bundle;
 }
 
 function currentRecord() {
@@ -320,12 +585,13 @@ function findMethodForRecord(record) {
 }
 
 function createMethodFromRecord(record) {
-  const steps = record.resultCard?.行动步骤 || record.resultCard?.["行动步骤"] || [];
+  const steps = record.resultCard?.下次怎么做 || record.resultCard?.["下次怎么做"] || [];
   const method = normalizeMethod({
     id: `local-method-${Date.now()}`,
+    sourceReviewId: record.id,
     title: `${record.title.slice(0, 14)}方法卡`,
-    scenes: [record.scene, "复盘"],
-    trigger: record.resultCard?.问题提醒 || "再次遇到类似情况前",
+    scenes: [record.scene],
+    trigger: record.summary?.需要改进的地方 || "再次遇到类似情况前",
     steps: Array.isArray(steps) && steps.length ? steps : ["复述当前情况", "确认目标和边界", "列出下一步行动"],
     source: record.title,
     updatedAt: localDateKey(),
@@ -336,6 +602,39 @@ function createMethodFromRecord(record) {
 
 function findCalibrationForRecord(record) {
   return store.calibrations.find((card) => card.sourceReviewId === record.id || card.worry === record.title || card.worry === record.rawInput);
+}
+
+function calibrationFromRecord(record) {
+  const existing = findCalibrationForRecord(record);
+  if (existing) return existing;
+  const summary = record.summary || {};
+  const resultCard = record.resultCard || {};
+  return normalizeCalibration({
+    id: `derived-calibration-${record.id}`,
+    sourceReviewId: record.id,
+    worry: summary.我在担心什么 || record.rawInput || record.title,
+    scene: record.scene,
+    estimatedProbability: "待校准",
+    verificationDate: "",
+    status: "pending",
+    finalResult: "",
+    actualImpact: "",
+    calibrationConclusion: resultCard.提醒自己 || summary.现实检查 || "",
+  });
+}
+
+function calibrationCardsForPage() {
+  const merged = new Map(store.calibrations.map((card) => [card.id, card]));
+  store.records
+    .filter((record) => record.type === "anxiety")
+    .forEach((record) => {
+      if (!findCalibrationForRecord(record)) {
+        const card = calibrationFromRecord(record);
+        upsertCalibration(card);
+        merged.set(card.id, card);
+      }
+    });
+  return Array.from(merged.values());
 }
 
 function replaceTextReferences(oldText, newText) {
@@ -479,11 +778,12 @@ function homePage() {
           <h1>${modeLabel(mode)}，下一次会更好</h1>
           <div class="input-panel">
             ${reviewContextControls(mode)}
-            <textarea data-draft maxlength="2000" placeholder="${modePlaceholder(mode)}">${escapeHtml(state.draft)}</textarea>
+            ${structuredDraftForm(mode)}
             <div class="input-footer">
-              <strong>${mode === "event" ? "整理事实槽位，沉淀方法卡" : "拆开担心槽位，生成校准卡"}</strong>
-              <span>${state.draft.length} / 2000</span>
-              <button class="primary-button" data-home-analyze ${state.loading ? "disabled" : ""}>${state.loading ? "整理中..." : "开始复盘"}</button>
+              <strong>${mode === "event" ? "先写清楚，再变成下次可用的行动卡" : "把担心拆成现实检查和可控行动"}</strong>
+              <span>${composeDraftInput().length} / 2000</span>
+              <button class="ghost-button" data-home-ai ${state.loading ? "disabled" : ""}>${state.loading ? "生成中..." : "AI 复盘"}</button>
+              <button class="primary-button" data-home-analyze>开始复盘</button>
             </div>
           </div>
         </div>
@@ -497,6 +797,41 @@ function homePage() {
       <div class="footer-line"><span>复盘，是为了更好的下一次</span></div>
     </main>
   `);
+}
+
+function structuredDraftForm(mode) {
+  const fields = currentDraftFields();
+  const mainLabel = mode === "event" ? "发生了什么" : "我在担心什么";
+  const mainPlaceholder = mode === "event"
+    ? "把事情本身写清楚：背景、你做了什么、结果是什么。"
+    : "把担心本身写清楚：你在担心什么，它从哪里开始。";
+  const extraFields = mode === "event"
+    ? [
+        ["improvement", "需要改进的地方", "这次哪里可以做得更好？"],
+        ["next", "下次怎么做", "一行一个动作，例如：先确认目标和边界"],
+        ["reminder", "提醒自己", "写一句下次能提醒自己的话"],
+      ]
+    : [
+        ["reality", "现实检查", "哪些证据支持/不支持这个担心？"],
+        ["action", "我能做什么", "一行一个可控动作，例如：准备 3 个高频问题"],
+        ["reminder", "提醒自己", "写一句能把自己拉回行动的话"],
+      ];
+  return `
+    <div class="structured-draft">
+      <label class="draft-field draft-field-main">
+        <span>${mainLabel}</span>
+        <textarea data-draft maxlength="1200" placeholder="${mainPlaceholder}">${escapeHtml(state.draft)}</textarea>
+      </label>
+      <div class="draft-field-grid">
+        ${extraFields.map(([key, label, placeholder]) => `
+          <label class="draft-field">
+            <span>${label}</span>
+            <textarea data-draft-field="${key}" maxlength="800" placeholder="${placeholder}">${escapeHtml(fields[key] || "")}</textarea>
+          </label>
+        `).join("")}
+      </div>
+    </div>
+  `;
 }
 
 function reviewContextControls(mode) {
@@ -523,9 +858,9 @@ function recentPanel() {
     <article class="panel recent-panel">
       <div class="panel-head"><h2>最近复盘</h2><button data-tab="records">查看全部 ${icons.chevron}</button></div>
       <div class="recent-list">
-        ${store.records.slice(0, 3).map((record, index) => `
+        ${store.records.slice(0, 5).map((record, index) => `
           <button class="recent-item" data-detail="${record.id}">
-            <span class="recent-icon tone-${index}">${record.type === "event" ? icons.note : "❤"}</span>
+            <span class="recent-icon tone-${index % 2}">${record.type === "event" ? icons.note : "❤"}</span>
             <span><strong>${record.title}</strong><small>${typeText(record.type)} · ${record.scene}</small></span>
             <em>${record.shortDate}</em>
           </button>
@@ -542,7 +877,7 @@ function weekPanel() {
   const weekKeys = new Set(Array.from({ length: 7 }, (_, index) => localDateKey(addDays(weekStart, index))));
   const recordCountByDate = store.records.reduce((counts, record) => {
     const key = recordDateKey(record);
-    if (weekKeys.has(key)) counts[key] = (counts[key] || 0) + 1;
+    counts[key] = (counts[key] || 0) + 1;
     return counts;
   }, {});
   const weekDays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"].map((label, index) => {
@@ -556,24 +891,52 @@ function weekPanel() {
       isToday: key === todayKey,
     };
   });
+  const weekRecordCountByDate = Object.fromEntries(Object.entries(recordCountByDate).filter(([key]) => weekKeys.has(key)));
   const reviewedDays = weekDays.filter((day) => day.count > 0).length;
-  const weeklyRecordCount = Object.values(recordCountByDate).reduce((total, count) => total + count, 0);
+  const weeklyRecordCount = Object.values(weekRecordCountByDate).reduce((total, count) => total + count, 0);
   const ringProgress = Math.round((reviewedDays / 7) * 100);
+  const monthKey = state.calendarMonth;
+  const monthDays = monthCalendarDays(monthKey);
+  const weekSummary = `
+    <div class="week-content">
+      <div class="ring" style="--progress: ${ringProgress}%"><span>${reviewedDays}<small>/7</small></span></div>
+      <ul class="week-days">
+        ${weekDays.map((day) => `
+          <li class="${day.count > 0 ? "done" : ""} ${day.isToday ? "today" : ""}">
+            <span><b>${day.label}</b><small>${day.dateText}${day.isToday ? " · 今天" : ""}</small></span>
+            <i>${day.count > 0 ? "✓" : ""}</i>
+          </li>
+        `).join("")}
+      </ul>
+    </div>
+    <p>本周复盘 ${reviewedDays} 天<br />本周完成 ${weeklyRecordCount} 件复盘</p>
+  `;
+  const monthReview = `
+    <div class="month-review in-panel">
+      <div class="month-toolbar">
+        <button class="month-arrow" data-month-shift="-1">${icons.back}</button>
+        <select data-month-select aria-label="选择月份">
+          ${monthOptions(monthKey).map((item) => `<option value="${item}" ${item === monthKey ? "selected" : ""}>${monthLabel(item)}</option>`).join("")}
+        </select>
+        <button class="month-arrow" data-month-shift="1">${icons.chevron}</button>
+      </div>
+      <div class="month-weekdays">${["一", "二", "三", "四", "五", "六", "日"].map((label) => `<span>${label}</span>`).join("")}</div>
+      <div class="month-grid">
+        ${monthDays.map((date) => {
+          const key = localDateKey(date);
+          const count = recordCountByDate[key] || 0;
+          const outside = key.slice(0, 7) !== monthKey;
+          return `<button class="month-day ${outside ? "outside" : ""} ${count ? "has-record" : ""} ${key === todayKey ? "today" : ""}" data-calendar-day="${key}">
+            <span>${date.getDate()}</span>${count ? `<i>${count}</i>` : ""}
+          </button>`;
+        }).join("")}
+      </div>
+    </div>
+  `;
   return `
     <article class="panel week-panel">
-      <h2>本周回顾</h2>
-      <div class="week-content">
-        <div class="ring" style="--progress: ${ringProgress}%"><span>${reviewedDays}<small>/7</small></span></div>
-        <ul class="week-days">
-          ${weekDays.map((day) => `
-            <li class="${day.count > 0 ? "done" : ""} ${day.isToday ? "today" : ""}">
-              <span><b>${day.label}</b><small>${day.dateText}${day.isToday ? " · 今天" : ""}</small></span>
-              <i>${day.count > 0 ? "✓" : ""}</i>
-            </li>
-          `).join("")}
-        </ul>
-      </div>
-      <p>本周复盘 ${reviewedDays} 天<br />本周完成 ${weeklyRecordCount} 件复盘</p>
+      <div class="panel-head week-head"><h2>${state.calendarExpanded ? "月历回顾" : "本周回顾"}</h2><button class="calendar-toggle ${state.calendarExpanded ? "open" : ""}" data-calendar-toggle>${state.calendarExpanded ? "本周" : "月历"} ${icons.chevron}</button></div>
+      ${state.calendarExpanded ? monthReview : weekSummary}
     </article>
   `;
 }
@@ -582,8 +945,9 @@ function inspirationPanel() {
   return `<article class="panel inspiration-panel"><h2>灵感卡片</h2>${quoteArt()}</article>`;
 }
 
-function pageHeader(title, back = "home") {
-  return `<div class="page-header"><button class="back-button" data-route="${back}">${icons.back}</button><h1>${title}</h1></div>`;
+function pageHeader(title, back = "") {
+  const backButton = back ? `<button class="back-button" data-route="${back}" aria-label="返回">${icons.back}</button>` : "";
+  return `<div class="page-header">${backButton}<h1>${title}</h1></div>`;
 }
 
 function inputPage(mode) {
@@ -596,7 +960,10 @@ function inputPage(mode) {
       ${reviewContextControls(mode)}
       <textarea class="large-textarea" data-draft maxlength="2000" placeholder="${placeholder}">${escapeHtml(state.draft)}</textarea>
       <div class="textarea-count">${state.draft.length} / 2000</div>
-      <button class="primary-button wide" data-analyze ${state.loading ? "disabled" : ""}>${state.loading ? "整理中..." : "开始整理"}</button>
+      <div class="action-row">
+        <button class="ghost-button" data-analyze ${state.loading ? "disabled" : ""}>${state.loading ? "生成中..." : "AI 复盘"}</button>
+        <button class="primary-button" data-start-manual>开始复盘</button>
+      </div>
     </main>
   `);
 }
@@ -606,57 +973,49 @@ function flowTabs() {
 }
 
 function summaryPage() {
-  const record = currentRecord();
-  return shell(`
-    <main class="content-page narrow-page">
-      ${pageHeader("AI 整理结果", "home")}
-      ${flowTabs()}
-      ${fieldGrid(objectFields(record.summary, summaryTemplates[state.mode]))}
-      <div class="action-row">
-        <button class="secondary-button" data-route="home">修改内容</button>
-        <button class="primary-button" data-route="deep">开始复盘</button>
-      </div>
-    </main>
-  `);
-}
-
-function deepPage() {
-  const record = currentRecord();
-  return shell(`
-    <main class="content-page narrow-page">
-      ${pageHeader("深度复盘", "summary")}
-      ${flowTabs()}
-      ${fieldGrid(objectFields(record.deepReview, deepReviewTemplates[state.mode]), true)}
-      <div class="action-row">
-        <button class="secondary-button" data-route="summary">上一步</button>
-        <button class="primary-button" data-route="result">${state.mode === "event" ? "生成行动卡" : "生成校准卡"}</button>
-      </div>
-    </main>
-  `);
+  return resultPage();
 }
 
 function resultPage() {
   const record = currentRecord();
-  const title = state.mode === "event" ? "下次行动卡" : "焦虑校准卡";
-  const calibration = state.mode === "anxiety" ? findCalibrationForRecord(record) : null;
+  const title = state.mode === "event" ? "行动卡" : "焦虑校准卡";
+  const calibration = state.mode === "anxiety" ? (state.currentBundle?.calibrationCard || findCalibrationForRecord(record)) : null;
   return shell(`
     <main class="content-page narrow-page">
-      ${pageHeader(title, "deep")}
+      <div class="page-header"><h1>${title}</h1></div>
       ${fieldGrid(objectFields(record.resultCard, resultCards[state.mode].fields))}
       <div class="action-row wrap">
-        <button class="secondary-button" data-tab="records" data-toast="已保存到记录">保存到记录</button>
-        <button class="secondary-button" data-tab="${state.mode === "event" ? "methods" : "calibration"}" data-toast="${state.mode === "event" ? "已保存到方法库" : "已保存到校准"}">${state.mode === "event" ? "保存到方法库" : "保存到校准"}</button>
+        <button class="ghost-button" data-follow-up="${record.id}" ${state.followUpLoading ? "disabled" : ""}>${state.followUpLoading ? "追问中..." : "继续追问"}</button>
+        ${state.mode === "event"
+          ? `<button class="primary-button" data-save-record-ask-method ${state.saving ? "disabled" : ""}>${state.saving ? "保存中..." : "保存记录"}</button>`
+          : `<button class="primary-button" data-save-bundle="calibration" ${state.saving ? "disabled" : ""}>${state.saving ? "保存中..." : "保存记录"}</button>`}
         ${state.mode === "anxiety" ? `
           <label class="date-picker">验证日期
             <input type="date" data-result-verification-date value="${escapeHtml(calibration?.verificationDate || "")}" />
           </label>
           <button class="ghost-button" data-save-result-verification="${calibration?.id || ""}">保存验证日期</button>
         ` : ""}
-        <button class="ghost-button" data-follow-up="${record.id}" ${state.followUpLoading ? "disabled" : ""}>${state.followUpLoading ? "追问中..." : "继续追问"}</button>
       </div>
       ${state.followUp ? followUpPanel(state.followUp) : ""}
+      ${state.saveDialogOpen ? saveMethodDialog() : ""}
     </main>
   `);
+}
+
+function saveMethodDialog() {
+  return `
+    <div class="modal-backdrop" role="presentation">
+      <section class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="save-method-title">
+        <div class="modal-mark">${icons.bookmark}</div>
+        <h2 id="save-method-title">是否保存至方法库？</h2>
+        <p>保存到方法库后，这张行动卡会出现在方法库里，方便下次遇到类似情况时复用。</p>
+        <div class="modal-actions">
+          <button class="secondary-button" data-skip-method-library>不保存</button>
+          <button class="primary-button" data-save-record-method ${state.saving ? "disabled" : ""}>保存</button>
+        </div>
+      </section>
+    </div>
+  `;
 }
 
 function followUpPanel(followUp) {
@@ -686,6 +1045,10 @@ function fieldGrid(fields, numbered = false) {
   `;
 }
 
+function sectionedFields(title, fields) {
+  return fields.map(([label, value]) => [`${title} · ${label}`, value]);
+}
+
 function fieldBody(value) {
   if (Array.isArray(value)) {
     return `<ol>${value.map((item) => `<li>${escapeHtml(displayValue(item))}</li>`).join("")}</ol>`;
@@ -702,25 +1065,39 @@ function displayValue(value) {
   if (Array.isArray(value)) return value.map(displayValue).filter(Boolean).join("\n");
   if (typeof value !== "object") return String(value);
   return Object.entries(value)
-    .map(([key, item]) => `${key}：${displayValue(item)}`)
-    .filter((line) => !line.endsWith("："))
+    .map(([key, item]) => {
+      const rendered = displayValue(item);
+      return rendered ? `${key}: ${rendered}` : "";
+    })
+    .filter(Boolean)
     .join("\n");
 }
 
 function recordsPage() {
-  const filters = ["全部", "事件", "焦虑", "工作", "学习", "面试", "人际", "决策", "健康", "未来", "生活", "其他"];
+  const filters = ["全部", "焦虑", "工作", "学习", "面试", "人际", "决策", "健康", "未来", "生活", "其他"];
   const filtered = store.records.filter((record) => matchesFilter(record, state.filter) && matchesQuery([record.title, record.scene, record.conclusion]));
   return shell(`<main class="content-page"><h1 class="list-title">我的记录</h1>${filterRow(filters)}<div class="card-list">${filtered.map(recordCard).join("") || emptyState("没有找到匹配的记录")}</div></main>`);
 }
 
 function methodsPage() {
-  const filters = ["全部", "工作", "学习", "面试", "人际", "决策", "生活", "其他"];
+  if (state.editingMethodId) {
+    const card = store.methods.find((item) => item.id === state.editingMethodId);
+    if (card) {
+      return shell(`
+        <main class="content-page narrow-page">
+          <h1 class="list-title">编辑方法卡</h1>
+          ${methodEditCard(card)}
+        </main>
+      `);
+    }
+  }
+  const filters = ["全部", ...fixedSceneTags()];
   const filtered = store.methods.filter((card) => (state.filter === "全部" || card.scenes.includes(state.filter)) && matchesQuery([card.title, card.trigger, methodSourceLabel(card.source)]));
   return shell(`<main class="content-page"><h1 class="list-title">方法库</h1>${filterRow(filters)}<div class="method-grid">${filtered.map(methodCard).join("") || emptyState("没有找到匹配的方法卡")}</div></main>`);
 }
 
 function calibrationPage() {
-  const cards = store.calibrations.filter((card) => card.status === state.calibrationTab && matchesQuery([card.worry, card.scene, card.calibrationConclusion]));
+  const cards = calibrationCardsForPage().filter((card) => card.status === state.calibrationTab && matchesQuery([card.worry, card.scene, card.calibrationConclusion]));
   return shell(`
     <main class="content-page">
       <h1 class="list-title">焦虑校准</h1>
@@ -735,23 +1112,63 @@ function detailPage() {
   const mode = record.type;
   if (state.editingRecordId === record.id) return detailEditPage(record);
   return shell(`
-    <main class="content-page narrow-page">
+    <main class="content-page detail-page">
       ${pageHeader("详情", "records")}
-      <section class="detail-hero"><h1>${record.title}</h1><p>${typeText(mode)} · ${record.scene}<span>${record.date} 14:30</span></p></section>
+      <section class="detail-hero"><h1>${record.title}</h1><p>${typeText(mode)} · ${record.scene}<span>${displayDate(record.date, { full: true })}</span></p></section>
       ${fieldGrid([
         ["原始输入", record.rawInput],
-        ...objectFields(record.summary, summaryTemplates[mode]).slice(0, 2),
-        ...objectFields(record.deepReview, deepReviewTemplates[mode]).slice(0, 2),
-        ...objectFields(record.resultCard, resultCards[mode].fields).slice(0, 2),
-        ["我的笔记", "这次复盘让我意识到：确认步骤要前置。"],
+        ...detailHighlights(record, mode),
+        ["我的笔记", record.note || "这次复盘让我意识到：确认步骤要前置。"],
       ])}
       <div class="action-row wrap">
         <button class="ghost-button" data-edit-record="${record.id}">编辑复盘内容</button>
-        ${mode === "event" ? `<button class="secondary-button" data-edit-record-method="${record.id}">编辑方法卡</button>` : ""}
         <button class="ghost-button" data-reanalyze="${record.id}">重新分析</button>
-        <button class="${mode === "event" ? "ghost-button" : "secondary-button"}" data-toast="${mode === "event" ? "已保存为方法卡" : "已加入校准"}">${mode === "event" ? "保存为方法卡" : "加入校准"}</button>
         <button class="danger-button" data-delete-record="${record.id}">删除</button>
-        <button class="ghost-button" data-toast="已归档，本地演示不删除数据">归档</button>
+      </div>
+    </main>
+  `);
+}
+
+function detailHighlights(record, mode) {
+  const summary = objectFields(record.summary, summaryTemplates[mode]);
+  const resultCard = objectFields(record.resultCard, resultCards[mode].fields);
+  const cardTitle = mode === "event" ? "行动卡" : "校准卡";
+  if (mode === "event") {
+    return [
+      ...sectionedFields(cardTitle, [
+        ...selectEditFields(summary, ["发生了什么", "需要改进的地方"]),
+        ...selectEditFields(resultCard, ["下次怎么做", "提醒自己"]),
+      ]),
+    ];
+  }
+  return [
+    ...sectionedFields(cardTitle, [
+      ...selectEditFields(summary, ["我在担心什么", "现实检查"]),
+      ...selectEditFields(resultCard, ["我能做什么", "提醒自己"]),
+    ]),
+  ];
+}
+
+function flowEditPage(record) {
+  const mode = record.type;
+  const compact = compactEditFields(record, mode);
+  return shell(`
+    <main class="content-page narrow-page">
+      <div class="page-header"><h1>修改复盘内容</h1></div>
+      ${flowTabs()}
+      <section class="detail-hero detail-editor" data-record-editor="${record.id}">
+        <label>标题<input data-record-title value="${escapeHtml(record.title)}" /></label>
+        <label>场景${sceneSelect(record.scene, mode)}</label>
+        <label>原始输入<textarea data-record-raw>${escapeHtml(record.rawInput)}</textarea></label>
+        ${mergedEditableSection(mode === "event" ? "行动卡" : "校准卡", [
+          ["summary", compact.summary],
+          ["resultCard", compact.resultCard],
+        ])}
+        <label>我的笔记<textarea data-record-note>${escapeHtml(record.note || "")}</textarea></label>
+      </section>
+      <div class="action-row wrap">
+        <button class="primary-button" data-save-record="${record.id}">保存修改</button>
+        <button class="ghost-button" data-cancel-record-edit>取消</button>
       </div>
     </main>
   `);
@@ -759,16 +1176,18 @@ function detailPage() {
 
 function detailEditPage(record) {
   const mode = record.type;
+  const compact = compactEditFields(record, mode);
   return shell(`
-    <main class="content-page narrow-page">
+    <main class="content-page detail-page record-edit-page">
       ${pageHeader("编辑详情", "records")}
       <section class="detail-hero detail-editor" data-record-editor="${record.id}">
         <label>标题<input data-record-title value="${escapeHtml(record.title)}" /></label>
-        <label>场景<input data-record-scene value="${escapeHtml(record.scene)}" /></label>
+        <label>场景${sceneSelect(record.scene, mode)}</label>
         <label>原始输入<textarea data-record-raw>${escapeHtml(record.rawInput)}</textarea></label>
-        ${editableSection("summary", "AI 整理", editableFields(record.summary, summaryTemplates[mode]))}
-        ${editableSection("deepReview", "深度复盘", editableFields(record.deepReview, deepReviewTemplates[mode]))}
-        ${editableSection("resultCard", mode === "event" ? "行动卡" : "校准卡", editableFields(record.resultCard, resultCards[mode].fields))}
+        ${mergedEditableSection(mode === "event" ? "行动卡" : "校准卡", [
+          ["summary", compact.summary],
+          ["resultCard", compact.resultCard],
+        ])}
         <label>我的笔记<textarea data-record-note>${escapeHtml(record.note || "")}</textarea></label>
       </section>
       <div class="action-row wrap">
@@ -779,17 +1198,54 @@ function detailEditPage(record) {
   `);
 }
 
+function compactEditFields(record, mode) {
+  const summary = editableFields(record.summary, summaryTemplates[mode]);
+  const resultCard = editableFields(record.resultCard, resultCards[mode].fields);
+  if (mode === "event") {
+    return {
+      summary: selectEditFields(summary, ["发生了什么", "需要改进的地方"]),
+      resultCard: selectEditFields(resultCard, ["下次怎么做", "提醒自己"]),
+    };
+  }
+  return {
+    summary: selectEditFields(summary, ["我在担心什么", "现实检查"]),
+    resultCard: selectEditFields(resultCard, ["我能做什么", "提醒自己"]),
+  };
+}
+
+function selectEditFields(fields, preferredLabels) {
+  const selected = [];
+  preferredLabels.forEach((preferred) => {
+    const found = fields.find(([label]) => label === preferred || label.includes(preferred));
+    if (found && !selected.some(([label]) => label === found[0])) selected.push(found);
+  });
+  return selected.length ? selected : fields.slice(0, Math.min(2, fields.length));
+}
+
 function editableSection(section, title, fields) {
   return `
     <fieldset class="edit-fieldset">
       <legend>${title}</legend>
-      ${fields.map(([label, value], index) => `
-        <label>${escapeHtml(label)}
-          <textarea data-record-field data-section="${section}" data-label="${escapeHtml(label)}" data-index="${index}">${escapeHtml(Array.isArray(value) ? value.join("\n") : value)}</textarea>
-        </label>
-      `).join("")}
+      ${editableControls(section, fields)}
     </fieldset>
   `;
+}
+
+function mergedEditableSection(title, groups) {
+  return `
+    <fieldset class="edit-fieldset">
+      <legend>${title}</legend>
+      ${groups.map(([section, fields]) => editableControls(section, fields)).join("")}
+    </fieldset>
+  `;
+}
+
+function editableControls(section, fields) {
+  return fields.map(([label, value], index) => `
+    <label>${escapeHtml(label)}
+      <textarea data-record-field data-section="${section}" data-label="${escapeHtml(label)}" data-index="${index}">${escapeHtml(Array.isArray(value) ? value.join("\n") : value)}</textarea>
+    </label>
+  `).join("");
 }
 
 function filterRow(filters) {
@@ -797,20 +1253,43 @@ function filterRow(filters) {
 }
 
 function recordCard(record) {
+  const mode = record.type;
+  const previewFields = recordPreviewFields(record, mode);
   return `
-    <article class="list-card" data-detail="${record.id}">
+    <article class="list-card record-list-card" data-detail="${record.id}">
       <div class="card-title-row">
-        <div><h3>${escapeHtml(record.title)}</h3><p>${typeText(record.type)} · ${escapeHtml(record.scene)} · ${record.date}</p></div>
+        <div><h3>${escapeHtml(record.title)}</h3><p>${typeText(record.type)} · ${escapeHtml(record.scene)} · ${displayDate(record.date, { full: true })}</p></div>
         <button class="text-button danger-text" data-delete-record="${record.id}">删除</button>
       </div>
-      <strong>${escapeHtml(record.conclusion)}</strong>
+      <div class="record-preview">
+        ${previewFields.map(([label, value]) => `
+          <section class="record-preview-item">
+            <h4>${escapeHtml(label)}</h4>
+            ${fieldBody(value)}
+          </section>
+        `).join("")}
+      </div>
       <span>${record.status}</span>
     </article>
   `;
 }
 
+function recordPreviewFields(record, mode) {
+  const summary = objectFields(record.summary, summaryTemplates[mode]);
+  const resultCard = objectFields(record.resultCard, resultCards[mode].fields);
+  if (mode === "event") {
+    return [
+      ...selectEditFields(summary, ["需要改进的地方"]),
+      ...selectEditFields(resultCard, ["下次怎么做", "提醒自己"]),
+    ];
+  }
+  return [
+    ...selectEditFields(summary, ["现实检查"]),
+    ...selectEditFields(resultCard, ["我能做什么", "提醒自己"]),
+  ];
+}
+
 function methodCard(card) {
-  if (state.editingMethodId === card.id) return methodEditCard(card);
   const source = methodSourceLabel(card.source);
   return `
     <article class="list-card method-card">
@@ -821,7 +1300,7 @@ function methodCard(card) {
           <button class="text-button danger-text" data-delete-method="${card.id}">删除</button>
         </div>
       </div>
-      <p>${card.scenes.map(escapeHtml).join("、")}</p>
+      <div class="method-tags">${card.scenes.map((scene) => `<span>${escapeHtml(scene)}</span>`).join("")}</div>
       <strong>触发条件：${escapeHtml(card.trigger)}</strong>
       <ol>${card.steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ol>
       ${source ? `<p>来自：${escapeHtml(source)}</p>` : ""}
@@ -833,7 +1312,7 @@ function methodEditCard(card) {
   return `
     <article class="list-card method-card method-editor" data-method-editor="${card.id}">
       <label>方法名<input data-method-title value="${escapeHtml(card.title)}" /></label>
-      <label>适用场景<input data-method-scenes value="${escapeHtml(card.scenes.join("、"))}" /></label>
+      <label>标签${methodSceneSelect(card)}</label>
       <label>触发条件<textarea data-method-trigger>${escapeHtml(card.trigger)}</textarea></label>
       <label>行动步骤<textarea data-method-steps>${escapeHtml(card.steps.join("\n"))}</textarea></label>
       <div class="action-row compact">
@@ -913,12 +1392,17 @@ function escapeHtml(value) {
 }
 
 function render() {
+  const workspace = app.querySelector(".workspace");
+  const scrollTop = workspace ? workspace.scrollTop : 0;
+  const activeElement = document.activeElement;
+  const activeField = activeElement?.matches?.("[data-search]") ? "search" : "";
+  const activeSelectionStart = activeElement?.selectionStart ?? null;
+  const activeSelectionEnd = activeElement?.selectionEnd ?? null;
   const routes = {
     home: homePage,
     eventInput: () => inputPage("event"),
     anxietyInput: () => inputPage("anxiety"),
     summary: summaryPage,
-    deep: deepPage,
     result: resultPage,
     records: recordsPage,
     methods: methodsPage,
@@ -926,6 +1410,17 @@ function render() {
     detail: detailPage,
   };
   app.innerHTML = routes[state.route]();
+  const nextWorkspace = app.querySelector(".workspace");
+  if (nextWorkspace) nextWorkspace.scrollTop = scrollTop;
+  if (activeField === "search") {
+    const nextSearch = app.querySelector("[data-search]");
+    if (nextSearch) {
+      nextSearch.focus();
+      if (activeSelectionStart !== null && activeSelectionEnd !== null) {
+        nextSearch.setSelectionRange(activeSelectionStart, activeSelectionEnd);
+      }
+    }
+  }
 }
 
 function saveMethodCard(id) {
@@ -934,16 +1429,17 @@ function saveMethodCard(id) {
   if (!editor || !card) return;
 
   const title = editor.querySelector("[data-method-title]").value.trim();
-  const sceneValue = editor.querySelector("[data-method-scenes]").value.trim();
   const trigger = editor.querySelector("[data-method-trigger]").value.trim();
   const steps = editor.querySelector("[data-method-steps]").value
     .split(/\r?\n/)
     .map((step) => step.trim())
     .filter(Boolean);
+  const selectedScene = editor.querySelector("[data-method-scene]").value;
+  const scene = fixedSceneTags().includes(selectedScene) ? selectedScene : "其他";
 
   Object.assign(card, {
     title: title || card.title,
-    scenes: sceneValue ? sceneValue.split(/[、,，]/).map((scene) => scene.trim()).filter(Boolean) : card.scenes,
+    scenes: [scene],
     trigger: trigger || card.trigger,
     steps: steps.length ? steps : card.steps,
     updatedAt: localDateKey(),
@@ -954,7 +1450,7 @@ function saveMethodCard(id) {
 
 function saveRecord(id) {
   const editor = app.querySelector(`[data-record-editor="${id}"]`);
-  const record = store.records.find((item) => item.id === id);
+  const record = store.records.find((item) => item.id === id) || (state.currentBundle?.record?.id === id ? state.currentBundle.record : null);
   if (!editor || !record) return;
 
   const oldTitle = record.title;
@@ -1019,7 +1515,9 @@ function saveCalibration(id) {
 function saveResultVerification(calibrationId) {
   const input = app.querySelector("[data-result-verification-date]");
   const record = currentRecord();
-  const card = store.calibrations.find((item) => item.id === calibrationId) || findCalibrationForRecord(record);
+  const card = store.calibrations.find((item) => item.id === calibrationId)
+    || (state.currentBundle?.calibrationCard?.id === calibrationId ? state.currentBundle.calibrationCard : null)
+    || findCalibrationForRecord(record);
   if (!input || !card) return;
   syncFieldValue(card.verificationDate, input.value);
   card.verificationDate = input.value;
@@ -1119,6 +1617,16 @@ app.addEventListener("click", async (event) => {
   }
 
   if (target.dataset.homeAnalyze !== undefined) {
+    startManualReview();
+    return;
+  }
+
+  if (target.dataset.startManual !== undefined) {
+    startManualReview();
+    return;
+  }
+
+  if (target.dataset.homeAi !== undefined) {
     analyzeDraft();
     return;
   }
@@ -1150,6 +1658,26 @@ app.addEventListener("click", async (event) => {
 
   if (target.dataset.saveResultVerification !== undefined) {
     saveResultVerification(target.dataset.saveResultVerification);
+    return;
+  }
+
+  if (target.dataset.saveRecordAskMethod !== undefined) {
+    await persistCurrentBundle("records", { askMethodLibrary: true });
+    return;
+  }
+
+  if (target.dataset.skipMethodLibrary !== undefined) {
+    setState({ saveDialogOpen: false, route: "records", tab: "records" });
+    return;
+  }
+
+  if (target.dataset.saveRecordMethod !== undefined) {
+    await persistCurrentBundle("methods");
+    return;
+  }
+
+  if (target.dataset.saveBundle) {
+    await persistCurrentBundle(target.dataset.saveBundle);
     return;
   }
 
@@ -1227,7 +1755,8 @@ app.addEventListener("click", async (event) => {
   }
 
   if (target.dataset.route) {
-    setState({ route: target.dataset.route, tab: target.dataset.route === "home" ? "review" : state.tab });
+    const tabByRoute = { home: "review", records: "records", methods: "methods", calibration: "calibration" };
+    setState({ route: target.dataset.route, tab: tabByRoute[target.dataset.route] || state.tab });
     return;
   }
 
@@ -1253,6 +1782,22 @@ app.addEventListener("click", async (event) => {
     return;
   }
 
+  if (target.dataset.calendarToggle !== undefined) {
+    setState({ calendarExpanded: !state.calendarExpanded });
+    return;
+  }
+
+  if (target.dataset.monthShift) {
+    setState({ calendarMonth: shiftMonth(state.calendarMonth, Number(target.dataset.monthShift)), calendarExpanded: true });
+    return;
+  }
+
+  if (target.dataset.calendarDay) {
+    const record = store.records.find((item) => recordDateKey(item) === target.dataset.calendarDay);
+    if (record) setState({ selectedRecordId: record.id, route: "detail" });
+    return;
+  }
+
   if (target.dataset.detail) {
     setState({ selectedRecordId: target.dataset.detail, route: "detail" });
   }
@@ -1262,10 +1807,36 @@ app.addEventListener("input", (event) => {
   if (event.target.matches("[data-draft]")) {
     state.draft = event.target.value;
     const count = app.querySelector(".textarea-count, .input-footer span");
-    if (count) count.textContent = `${state.draft.length} / 2000`;
+    if (count) count.textContent = `${composeDraftInput().length} / 2000`;
+  }
+
+  if (event.target.matches("[data-draft-field]")) {
+    state.draftFields[state.mode][event.target.dataset.draftField] = event.target.value;
+    const count = app.querySelector(".input-footer span");
+    if (count) count.textContent = `${composeDraftInput().length} / 2000`;
   }
 
   if (event.target.matches("[data-search]")) {
+    state.query = event.target.value;
+    if (state.searchComposing) return;
+    render();
+  }
+
+  if (event.target.matches("[data-month-select]")) {
+    state.calendarMonth = event.target.value;
+    render();
+  }
+});
+
+app.addEventListener("compositionstart", (event) => {
+  if (event.target.matches("[data-search]")) {
+    state.searchComposing = true;
+  }
+});
+
+app.addEventListener("compositionend", (event) => {
+  if (event.target.matches("[data-search]")) {
+    state.searchComposing = false;
     state.query = event.target.value;
     render();
   }

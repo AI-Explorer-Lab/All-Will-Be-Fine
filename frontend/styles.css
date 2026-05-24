@@ -288,7 +288,8 @@ textarea {
 .hero-copy {
   position: relative;
   z-index: 2;
-  width: 976px;
+  width: min(1032px, calc(100vw - 520px));
+  min-width: 920px;
   margin-left: 62px;
 }
 
@@ -310,32 +311,21 @@ textarea {
 }
 
 .input-panel {
-  min-height: 286px;
+  min-height: 0;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: rgba(255, 253, 249, 0.92);
   box-shadow: var(--shadow);
-  padding: 20px 24px 18px;
-}
-
-.input-panel textarea {
-  width: 100%;
-  height: 104px;
-  border: 0;
-  outline: 0;
-  color: var(--ink);
-  background: transparent;
-  font-size: 17px;
-  line-height: 1.8;
+  padding: 22px 26px 20px;
 }
 
 .review-context {
   display: grid;
-  grid-template-columns: 324px minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 24px;
   align-items: start;
-  padding-bottom: 16px;
-  margin-bottom: 18px;
+  padding-bottom: 18px;
+  margin-bottom: 20px;
   border-bottom: 1px solid rgba(220, 201, 181, 0.72);
 }
 
@@ -352,7 +342,7 @@ textarea {
 }
 
 .review-mode-row {
-  width: 312px;
+  width: 320px;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
@@ -391,20 +381,74 @@ textarea {
   color: #7f766f;
 }
 
+.structured-draft {
+  display: grid;
+  gap: 16px;
+}
+
+.draft-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.draft-field span {
+  color: #5e4838;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.draft-field textarea {
+  width: 100%;
+  height: 92px;
+  min-height: 92px;
+  border: 1px solid #ead6c2;
+  border-radius: 9px;
+  outline: 0;
+  padding: 13px 15px;
+  color: var(--ink);
+  background: #fffaf3;
+  font-size: 15px;
+  line-height: 1.7;
+  resize: vertical;
+}
+
+.draft-field-main textarea {
+  height: 118px;
+  min-height: 118px;
+  font-size: 16px;
+}
+
+.draft-field-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
 .input-footer {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
-  justify-content: flex-end;
-  gap: 28px;
+  gap: 16px;
+  min-height: 52px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(220, 201, 181, 0.54);
   color: var(--muted);
   font-size: 13px;
 }
 
 .input-footer strong {
-  margin-right: auto;
+  min-width: 0;
   color: #6d5b4c;
   font-size: 14px;
   font-weight: 700;
+  line-height: 1.5;
+}
+
+.input-footer span {
+  min-width: 70px;
+  text-align: right;
 }
 
 .primary-button,
@@ -586,17 +630,37 @@ button:active {
   height: 14px;
 }
 
+.week-head {
+  margin-bottom: 10px;
+}
+
+.calendar-toggle {
+  height: 32px;
+  padding: 0 8px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffaf3;
+}
+
+.calendar-toggle svg {
+  transition: transform 160ms ease;
+}
+
+.calendar-toggle.open svg {
+  transform: rotate(90deg);
+}
+
 .recent-list {
   display: grid;
 }
 
 .recent-item {
-  min-height: 76px;
+  min-height: 55px;
   padding: 0 10px 0 6px;
   display: grid;
-  grid-template-columns: 45px minmax(0, 1fr) 52px;
+  grid-template-columns: 34px minmax(0, 1fr) 48px;
   align-items: center;
-  column-gap: 14px;
+  column-gap: 12px;
   color: var(--ink);
   background: transparent;
   border-top: 1px solid #eee0cd;
@@ -608,19 +672,19 @@ button:active {
 }
 
 .recent-icon {
-  width: 45px;
-  height: 45px;
-  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
   color: #9b6d31;
   background: #fff2dc;
-  font-size: 22px;
+  font-size: 18px;
 }
 
 .recent-icon svg {
-  width: 24px;
-  height: 24px;
+  width: 19px;
+  height: 19px;
 }
 
 .tone-1 {
@@ -635,8 +699,8 @@ button:active {
 
 .recent-item strong {
   display: block;
-  font-size: 16px;
-  margin-bottom: 7px;
+  font-size: 15px;
+  margin-bottom: 3px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -751,6 +815,104 @@ button:active {
   font-size: 16px;
 }
 
+.month-review {
+  margin-top: 0;
+}
+
+.month-review.in-panel {
+  min-height: 242px;
+  display: grid;
+  align-content: start;
+}
+
+.month-toolbar {
+  display: grid;
+  grid-template-columns: 34px 1fr 34px;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.month-toolbar select {
+  height: 38px;
+  border: 1px solid #e4cdb6;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--ink);
+  background: linear-gradient(180deg, #fffdf8, #fff3e5);
+  font-size: 14px;
+  font-weight: 800;
+  outline: 0;
+}
+
+.month-arrow {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  color: var(--orange-dark);
+  background: #fff0e4;
+}
+
+.month-arrow svg {
+  width: 18px;
+  height: 18px;
+}
+
+.month-weekdays,
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+
+.month-weekdays {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.month-day {
+  position: relative;
+  aspect-ratio: 1;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #4e392e;
+  background: #fffaf3;
+  font-size: 13px;
+}
+
+.month-day.outside {
+  color: #b4a392;
+  background: #f8efe5;
+}
+
+.month-day.today {
+  border-color: #e87538;
+}
+
+.month-day.has-record {
+  color: #fff9f2;
+  background: var(--orange);
+  box-shadow: 0 8px 16px rgba(214, 91, 40, 0.18);
+}
+
+.month-day i {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  min-width: 14px;
+  height: 14px;
+  border-radius: 7px;
+  color: var(--orange-dark);
+  background: #fff8ed;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 14px;
+}
+
 .quote-art {
   width: 100%;
   height: 224px;
@@ -784,6 +946,11 @@ button:active {
 
 .narrow-page {
   max-width: 900px;
+}
+
+.detail-page {
+  max-width: 1120px;
+  padding-top: 34px;
 }
 
 .page-header {
@@ -899,6 +1066,11 @@ button:active {
   gap: 14px;
 }
 
+.detail-page .field-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
 .field-card,
 .list-card,
 .detail-hero {
@@ -911,6 +1083,10 @@ button:active {
 .field-card {
   position: relative;
   padding: 20px 22px;
+}
+
+.detail-page .field-card {
+  padding: 16px 18px;
 }
 
 .field-card .number {
@@ -931,6 +1107,10 @@ button:active {
 .list-card h3 {
   margin: 0 0 10px;
   font-size: 18px;
+}
+
+.detail-page .field-card h3 {
+  font-size: 17px;
 }
 
 .field-card p,
@@ -988,6 +1168,43 @@ button:active {
   line-height: 1.7;
 }
 
+.record-list-card {
+  display: grid;
+  gap: 14px;
+}
+
+.record-preview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.record-preview-item {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid #efe0d0;
+  border-radius: 8px;
+  background: #fffaf3;
+}
+
+.record-preview-item h4 {
+  margin: 0 0 8px;
+  color: var(--orange-dark);
+  font-size: 14px;
+}
+
+.record-preview-item p,
+.record-preview-item ol {
+  margin: 0;
+  color: #4e3a31;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.record-preview-item ol {
+  padding-left: 20px;
+}
+
 .card-title-row {
   display: flex;
   justify-content: space-between;
@@ -1011,6 +1228,23 @@ button:active {
   align-items: flex-start;
 }
 
+.method-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.method-tags span {
+  min-height: 28px;
+  padding: 5px 10px;
+  border-radius: 14px;
+  color: var(--orange-dark);
+  background: #fff0e4;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .danger-button,
 .danger-text {
   color: #9b2f1f;
@@ -1029,7 +1263,12 @@ button:active {
 
 .method-editor {
   display: grid;
-  gap: 14px;
+  gap: 18px;
+}
+
+.method-card.method-editor {
+  grid-column: 1 / -1;
+  padding: 28px;
 }
 
 .method-editor label,
@@ -1045,7 +1284,8 @@ button:active {
 .method-editor textarea,
 .method-editor select,
 .detail-editor input,
-.detail-editor textarea {
+.detail-editor textarea,
+.detail-editor select {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1058,12 +1298,32 @@ button:active {
 }
 
 .method-editor textarea {
-  min-height: 92px;
+  min-height: 136px;
+  resize: vertical;
+}
+
+.method-editor textarea[data-method-trigger] {
+  min-height: 150px;
+}
+
+.method-editor textarea[data-method-steps] {
+  min-height: 260px;
 }
 
 .detail-editor {
   display: grid;
   gap: 16px;
+}
+
+.record-edit-page .detail-editor {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.record-edit-page .detail-editor > label:has(textarea[data-record-raw]),
+.record-edit-page .detail-editor > label:has(textarea[data-record-note]),
+.record-edit-page .edit-fieldset {
+  grid-column: 1 / -1;
 }
 
 .detail-editor textarea {
@@ -1077,6 +1337,15 @@ button:active {
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 10px;
+}
+
+.record-edit-page .edit-fieldset {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.record-edit-page .edit-fieldset label:has(textarea) {
+  min-width: 0;
 }
 
 .edit-fieldset legend {
@@ -1162,6 +1431,63 @@ button:active {
   font-size: 14px;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(47, 32, 22, 0.28);
+  backdrop-filter: blur(3px);
+}
+
+.confirm-modal {
+  width: min(520px, 100%);
+  border: 1px solid #edc6a3;
+  border-radius: 12px;
+  padding: 30px;
+  color: var(--ink);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 248, 0.98), rgba(255, 247, 236, 0.98));
+  box-shadow: 0 28px 70px rgba(65, 39, 22, 0.24);
+}
+
+.modal-mark {
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: var(--orange-dark);
+  background: #fff0e4;
+  margin-bottom: 18px;
+}
+
+.modal-mark svg {
+  width: 26px;
+  height: 26px;
+}
+
+.confirm-modal h2 {
+  margin: 0 0 12px;
+  font-size: 25px;
+}
+
+.confirm-modal p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 26px;
+}
+
 @media (max-width: 1240px) {
   body {
     min-width: 1024px;
@@ -1173,6 +1499,7 @@ button:active {
 
   .hero-copy {
     width: 790px;
+    min-width: 0;
   }
 
   .desk-art.hero {
@@ -1192,5 +1519,9 @@ button:active {
 
   .review-mode-row {
     max-width: 312px;
+  }
+
+  .draft-field-grid {
+    grid-template-columns: 1fr;
   }
 }

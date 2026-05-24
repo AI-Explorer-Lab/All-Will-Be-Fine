@@ -7,7 +7,7 @@ db:
 agent:
   provider: rightcode
   base_url: https://www.right.codes/codex/v1
-  api_key: 
+  api_key: sk-8bbcfa9c26184cdabc9658ece1040e26
   api_key_env: OPENAI_API_KEY
   use_responses_api: true
   stream: true

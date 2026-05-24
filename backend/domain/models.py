@@ -21,7 +21,6 @@ class ReviewRecord:
     title: str
     raw_input: str
     summary: dict[str, Any]
-    deep_review: dict[str, Any]
     result_card: dict[str, Any]
     created_at: str
     updated_at: str

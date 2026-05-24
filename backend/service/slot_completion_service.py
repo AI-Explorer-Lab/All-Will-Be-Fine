@@ -124,7 +124,6 @@ class SlotCompletionService:
                                         "title": record.title,
                                         "raw_input": record.raw_input,
                                         "summary": record.summary,
-                                        "deep_review": record.deep_review,
                                         "result_card": record.result_card,
                                     },
                                 },
@@ -259,13 +258,12 @@ def response_schema() -> dict[str, Any]:
         "properties": {
             "title": {"type": "string"},
             "scene": {"type": "string"},
-            "summary": {"type": "object", "additionalProperties": {"type": "string"}},
-            "deep_review": {"type": "object", "additionalProperties": {"type": "string"}},
+            "summary": {"type": "object", "additionalProperties": True},
             "result_card": {"type": "object", "additionalProperties": True},
             "method_card": {"type": "object", "additionalProperties": True},
             "calibration_card": {"type": "object", "additionalProperties": True},
         },
-        "required": ["title", "scene", "summary", "deep_review", "result_card", "method_card", "calibration_card"],
+        "required": ["title", "scene", "summary", "result_card", "method_card", "calibration_card"],
     }
 
 
@@ -286,15 +284,13 @@ def follow_up_schema() -> dict[str, Any]:
 def slot_schema_hint(review_type: str) -> dict[str, list[str]]:
     if review_type == ANXIETY_TYPE:
         return {
-            "summary": ["焦虑触发点", "我担心的事情", "最坏剧本", "现实证据", "可控部分", "不可控部分"],
-            "deep_review": ["触发点", "担心内容", "证据检查", "概率校准", "可控行动", "安顿策略"],
-            "result_card": ["核心担心", "现实检查", "最小可控行动", "需要放下的不可控部分", "下次提醒自己的话"],
+            "summary": ["我在担心什么", "现实检查", "我能做什么", "提醒自己"],
+            "result_card": ["我能做什么", "提醒自己"],
             "calibration_card": ["worry", "scene", "estimated_probability", "verification_date"],
         }
     return {
-        "summary": ["事件摘要", "我的目标", "实际结果", "关键行为", "不满意点", "可能影响"],
-        "deep_review": ["事实层", "行为层", "认知层", "方法层"],
-        "result_card": ["问题提醒", "下次遇到类似情况，我会", "行动步骤", "一句提醒自己的话"],
+        "summary": ["发生了什么", "需要改进的地方", "下次怎么做", "提醒自己"],
+        "result_card": ["需要改进的地方", "下次怎么做", "提醒自己"],
         "method_card": ["title", "scenes", "trigger", "steps", "reminder"],
     }
 
@@ -309,37 +305,29 @@ def build_fallback_slots(request: CreateReviewRequest) -> dict[str, Any]:
 
 
 def event_slots(raw_input: str, title: str, scene: str) -> dict[str, Any]:
-    result = after_keywords(raw_input, ["导致", "结果", "最后", "所以"]) or "结果没有完全达到预期，需要进一步确认具体影响。"
-    key_behavior = infer_event_behavior(raw_input)
+    improvement = infer_event_gap(raw_input)
+    next_steps = ["复述我对事情的理解", "确认目标和边界", "列出关键不确定点", "要一个可参考样例", "明确完成标准"]
+    reminder = "开始做之前，先确认清楚，返工和内耗的成本更高。"
     return {
         "title": title,
         "scene": scene,
         "summary": {
-            "事件摘要": raw_input,
-            "我的目标": infer_goal(scene),
-            "实际结果": result,
-            "关键行为": key_behavior,
-            "不满意点": infer_event_gap(raw_input),
-            "可能影响": infer_impact(scene),
-        },
-        "deep_review": {
-            "事实层": f"在{scene}场景中，实际发生的情况是：{raw_input}",
-            "行为层": key_behavior,
-            "认知层": "当时可能默认自己已经理解了关键信息，或默认事情会按预期推进。",
-            "方法层": "下次需要在开始前补一个确认动作，把目标、边界、样例和完成标准说清楚。",
+            "发生了什么": raw_input,
+            "需要改进的地方": improvement,
+            "下次怎么做": next_steps,
+            "提醒自己": reminder,
         },
         "result_card": {
-            "问题提醒": infer_event_gap(raw_input),
-            "下次遇到类似情况，我会": "先停 5 分钟，把目标、边界、关键不确定点和验收标准确认清楚。",
-            "行动步骤": ["复述我对事情的理解", "确认目标和边界", "列出关键不确定点", "要一个可参考样例", "明确完成标准"],
-            "一句提醒自己的话": "开始做之前，先确认清楚，返工和内耗的成本更高。",
+            "需要改进的地方": improvement,
+            "下次怎么做": next_steps,
+            "提醒自己": reminder,
         },
         "method_card": {
             "title": f"{scene}开始前确认卡",
             "scenes": [scene, "复盘"],
             "trigger": "准备开始处理类似事情前",
-            "steps": ["复述理解", "确认目标和边界", "列出不确定点", "确认样例和验收标准"],
-            "reminder": "先确认，再行动。",
+            "steps": next_steps,
+            "reminder": reminder,
         },
         "calibration_card": None,
     }
@@ -351,27 +339,14 @@ def anxiety_slots(raw_input: str, title: str, scene: str) -> dict[str, Any]:
         "title": title,
         "scene": scene,
         "summary": {
-            "焦虑触发点": f"在{scene}场景里，注意力被一个尚未确定的结果牵引。",
-            "我担心的事情": worry,
-            "最坏剧本": infer_worst_case(worry),
-            "现实证据": "担心有一部分现实依据，但目前证据不足以证明最坏情况一定会发生。",
-            "可控部分": "把担心拆成 1 到 3 个今天可以准备、确认或验证的小动作。",
-            "不可控部分": "他人的评价、具体过程、偶然因素和最终结果。",
-        },
-        "deep_review": {
-            "触发点": f"想到{scene}相关的不确定结果时，开始反复推演失败场景。",
-            "担心内容": worry,
-            "证据检查": "支持证据是仍有不确定点；反对证据是可以继续准备，也并非所有结果都取决于单次表现。",
-            "概率校准": "焦虑时容易把失败概率放大，复盘时先把概率改成区间判断。",
-            "可控行动": "列出一个 30 分钟内可以完成的准备动作，并完成它。",
-            "安顿策略": "完成最小准备动作后，暂停继续推演，把注意力拉回当下。",
+            "我在担心什么": worry,
+            "现实检查": "这个担心有一定现实依据，但目前证据不足以证明最坏情况一定会发生。",
+            "我能做什么": "把担心拆成 1 到 3 个今天可以准备、确认或验证的小动作。",
+            "提醒自己": "焦虑不是预测结果，它只是提醒我有事情需要准备。",
         },
         "result_card": {
-            "核心担心": worry,
-            "现实检查": "这个担心有一定现实依据，但还不能推出最坏结果一定会发生。",
-            "最小可控行动": "准备一个最小行动清单，并在今天完成第一步。",
-            "需要放下的不可控部分": "他人评价、具体过程和最终结果。",
-            "下次提醒自己的话": "焦虑不是预测结果，它只是提醒我有事情需要准备。",
+            "我能做什么": "准备一个最小行动清单，并在今天完成第一步。",
+            "提醒自己": "焦虑不是预测结果，它只是提醒我有事情需要准备。",
         },
         "method_card": None,
         "calibration_card": {
@@ -411,7 +386,7 @@ def merge_slots(fallback: dict[str, Any], ai_slots: dict[str, Any]) -> dict[str,
     for key in ["title", "scene"]:
         if valid_text(ai_slots.get(key)):
             merged[key] = ai_slots[key].strip()
-    for key in ["summary", "deep_review", "result_card"]:
+    for key in ["summary", "result_card"]:
         merged[key] = normalize_slot_mapping(merge_mapping(fallback.get(key, {}), ai_slots.get(key, {})))
     for key in ["method_card", "calibration_card"]:
         if isinstance(fallback.get(key), dict) or isinstance(ai_slots.get(key), dict):

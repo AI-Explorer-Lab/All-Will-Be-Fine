@@ -16,6 +16,12 @@ def create_app() -> FastAPI:
     )
     register_exception_handlers(app)
     app.include_router(review_router, prefix="/api")
+
+    @app.get("/health")
+    @app.head("/health")
+    def health_check():
+        return {"status": "ok"}
+
     return app
 
 

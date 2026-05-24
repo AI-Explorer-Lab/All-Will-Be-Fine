@@ -23,9 +23,11 @@ class ReviewServiceTest(unittest.TestCase):
         self.assertEqual(bundle.record.type, "event")
         self.assertTrue(bundle.record.saved_to_method_library)
         self.assertIsNotNone(bundle.method_card)
-        self.assertIn("行动步骤", bundle.record.result_card)
-        self.assertIn("事件摘要", bundle.record.summary)
-        self.assertIn("接口沟通不清", bundle.record.summary["事件摘要"])
+        self.assertIn("下次怎么做", bundle.record.result_card)
+        self.assertIn("发生了什么", bundle.record.summary)
+        self.assertIn("需要改进的地方", bundle.record.summary)
+        self.assertNotIn("实际结果", bundle.record.summary)
+        self.assertIn("接口沟通不清", bundle.record.summary["发生了什么"])
 
     def test_anxiety_review_generates_calibration_card(self):
         service = ReviewService(slot_completer=FakeSlotCompleter())
@@ -35,8 +37,9 @@ class ReviewServiceTest(unittest.TestCase):
         self.assertEqual(bundle.record.type, "anxiety")
         self.assertTrue(bundle.record.saved_to_calibration)
         self.assertIsNotNone(bundle.calibration_card)
-        self.assertIn("可控部分", bundle.record.summary)
-        self.assertIn("核心担心", bundle.record.result_card)
+        self.assertIn("我在担心什么", bundle.record.summary)
+        self.assertNotIn("可控部分", bundle.record.summary)
+        self.assertIn("我能做什么", bundle.record.result_card)
 
 
 if __name__ == "__main__":

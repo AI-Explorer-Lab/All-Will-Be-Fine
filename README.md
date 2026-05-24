@@ -2,18 +2,6 @@
 
 一个网页端优先的私人复盘 Web MVP，包含事件复盘与焦虑复盘两条流程，并拆成 `frontend`、`backend`、`agent` 三端。
 
-## 运行前端
-
-从项目根目录启动一个静态文件服务：
-
-```powershell
-python -m http.server 5173 -d frontend
-```
-
-然后打开 `http://127.0.0.1:5173`。
-
-前端会优先连接 `http://127.0.0.1:8000/api`。如果后端没有启动，会自动使用本地 fallback 数据，页面仍可演示完整流程。
-
 ## 运行后端
 
 首次启动前先安装依赖：
@@ -28,7 +16,7 @@ python -m pip install -r backend/requirements.txt
 python -m uvicorn backend.main:app --reload
 ```
 
-当前 `backend/config/app.yaml` 默认连接本机 Postgres。只想本地快速演示、暂时不用数据库时，可以先设置：
+当前 `backend/config/app.yaml` 默认连接本机 Postgres。因此在启动后端服务之前需要连接数据库。只想本地快速演示、暂时不用数据库时，可以先设置：
 
 ```powershell
 $env:DB_TYPE = "memory"
@@ -46,6 +34,18 @@ $env:OPENAI_API_KEY = "你的 OpenAI API Key"
 - `GET /api/reviews`
 - `GET /api/methods`
 - `GET /api/calibrations`
+
+## 运行前端
+
+从项目根目录启动一个静态文件服务：
+
+```powershell
+python -m http.server 5173 -d frontend
+```
+
+然后打开 `http://127.0.0.1:5173`。
+
+前端会优先连接 `http://127.0.0.1:8000/api`。如果后端没有启动，会自动使用本地 fallback 数据，页面仍可演示完整流程。
 
 ## 后端结构
 

@@ -1,4 +1,5 @@
 import unittest
+from uuid import uuid4
 
 from backend.controller.APIs import review_controller
 from backend.domain.models import UserContext
@@ -31,6 +32,40 @@ class ReviewApiBoundaryTest(unittest.TestCase):
         records_response = review_controller.list_reviews(user=self.user)
         self.assertTrue(records_response["success"])
         self.assertGreaterEqual(len(records_response["data"]), 1)
+
+    def test_preview_analyze_does_not_persist_until_saved(self):
+        preview_user = UserContext(user_id=f"api-preview-user-{uuid4().hex}")
+        response = review_controller.analyze_review(
+            {"type": "event", "scene": "工作", "raw_input": "先生成预览，再确认保存", "persist": False},
+            user=preview_user,
+        )
+
+        self.assertTrue(response["success"])
+        self.assertEqual(review_controller.list_reviews(user=preview_user)["data"], [])
+
+        saved = review_controller.save_review_bundle(response["data"], user=preview_user)
+
+        self.assertTrue(saved["success"])
+        records = review_controller.list_reviews(user=preview_user)["data"]
+        self.assertEqual(len(records), 1)
+        self.assertNotIn("实际结果", records[0]["summary"])
+        self.assertEqual(len(review_controller.list_methods(user=preview_user)["data"]), 1)
+
+    def test_save_record_without_method_card_keeps_method_library_empty(self):
+        user = UserContext(user_id=f"api-record-only-user-{uuid4().hex}")
+        response = review_controller.analyze_review(
+            {"type": "event", "scene": "工作", "raw_input": "只保存记录，不进入方法库", "persist": False},
+            user=user,
+        )
+        payload = response["data"]
+        payload["method_card"] = None
+        payload["record"]["saved_to_method_library"] = False
+
+        saved = review_controller.save_review_bundle(payload, user=user)
+
+        self.assertTrue(saved["success"])
+        self.assertEqual(len(review_controller.list_reviews(user=user)["data"]), 1)
+        self.assertEqual(review_controller.list_methods(user=user)["data"], [])
 
     def test_empty_user_lists_start_empty(self):
         empty_user = UserContext(user_id="api-empty-user")
