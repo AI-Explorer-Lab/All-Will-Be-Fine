@@ -155,6 +155,7 @@ class SlotCompletionService:
 
 def post_responses(base_url: str, payload: dict[str, Any], api_key: str, config: dict[str, Any]) -> dict[str, Any]:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    timeout_seconds = positive_number(config.get("timeout_seconds"), default=15)
     req = urllib.request.Request(
         f"{base_url}/responses",
         data=body,
@@ -167,11 +168,19 @@ def post_responses(base_url: str, payload: dict[str, Any], api_key: str, config:
         method="POST",
     )
     opener = build_opener(config, base_url)
-    with opener.open(req, timeout=60) as response:
+    with opener.open(req, timeout=timeout_seconds) as response:
         raw = response.read().decode("utf-8", errors="replace")
     if payload.get("stream"):
         return parse_sse_response(raw)
     return json.loads(raw)
+
+
+def positive_number(value: Any, default: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return number if number > 0 else default
 
 
 def build_opener(config: dict[str, Any], base_url: str) -> urllib.request.OpenerDirector:

@@ -9,6 +9,7 @@ agent:
   base_url: https://www.right.codes/codex/v1
   api_key_env: OPENAI_API_KEY
   use_responses_api: true
-  stream: true
+  stream: false
   model: gpt-5.2
+  timeout_seconds: 15
   no_proxy: 127.0.0.1,localhost,right.codes,www.right.codes
