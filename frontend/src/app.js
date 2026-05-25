@@ -946,7 +946,7 @@ function shell(content) {
           <input data-search value="${escapeHtml(state.query)}" placeholder="搜索复盘记录、方法卡片..." />
           <button type="button" data-search-submit aria-label="搜索">${icons.search}</button>
         </label>
-        <div class="notification-wrap">
+        <div class="notification-wrap" style="position: relative; display: grid; place-items: center;">
           <button class="header-icon" data-notifications aria-label="通知" aria-expanded="${state.notificationsOpen}">
             ${icons.bell}${notifications.length ? `<i></i>` : ""}
           </button>
@@ -979,8 +979,8 @@ function notificationItems() {
 
 function notificationPanel(items) {
   return `
-    <section class="notification-panel" aria-label="通知列表">
-      <h2>通知</h2>
+    <section class="notification-panel" aria-label="通知列表" style="position: absolute; top: calc(100% + 14px); right: -14px; z-index: 20; width: 286px;">
+      <div class="notification-title">通知</div>
       ${items.length ? items.map((item) => `
         <button class="notification-item" data-open-calibration="${item.id}" type="button">
           <strong>${escapeHtml(item.title)}</strong>
