@@ -927,9 +927,9 @@ function authPage() {
         <form class="auth-form" data-auth-form>
           <h1>${isRegister ? "创建账号" : "登录账号"}</h1>
           <p>登录后才能使用复盘、方法库和校准功能。</p>
-          <label>账号<input data-auth-username autocomplete="username" placeholder="例如 zhangsan" /></label>
+          <label>账号<input data-auth-username autocomplete="username" placeholder="${isRegister ? "例如 zhangsan" : ""}" /></label>
           ${isRegister ? `<label>昵称<input data-auth-nickname autocomplete="nickname" placeholder="展示名称，可不填" /></label>` : ""}
-          <label>密码<input data-auth-password type="password" autocomplete="${isRegister ? "new-password" : "current-password"}" placeholder="至少 8 位，包含字母和数字" /></label>
+          <label>密码<input data-auth-password type="password" autocomplete="${isRegister ? "new-password" : "current-password"}" placeholder="${isRegister ? "至少 8 位，包含字母和数字" : ""}" /></label>
           <button class="primary-button auth-submit" type="submit" ${state.authSubmitting ? "disabled" : ""}>
             ${state.authSubmitting ? "处理中..." : isRegister ? "创建并登录" : "登录"}
           </button>
