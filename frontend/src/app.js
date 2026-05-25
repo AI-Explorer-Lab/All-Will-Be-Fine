@@ -59,6 +59,7 @@ const state = {
   authSubmitting: false,
   calendarMonth: localDateKey().slice(0, 7),
   calendarExpanded: false,
+  notificationsOpen: false,
 };
 
 const navItems = [
@@ -921,6 +922,7 @@ function parseEditableValue(value, originalValue) {
 
 function shell(content) {
   const nickname = state.authUser?.nickname || "已登录";
+  const notifications = notificationItems();
   return `
     <aside class="sidebar">
       <div class="brand">${leafLogo()}<div><div class="brand-name">复盘</div><div class="brand-subtitle">下一次会更好</div></div></div>
@@ -944,13 +946,48 @@ function shell(content) {
           <input data-search value="${escapeHtml(state.query)}" placeholder="搜索复盘记录、方法卡片..." />
           <button type="button" data-search-submit aria-label="搜索">${icons.search}</button>
         </label>
-        <button class="header-icon" data-toast="暂时没有新的提醒" aria-label="通知">${icons.bell}<i></i></button>
-        <button class="profile-button" data-logout aria-label="退出登录" title="退出登录">
-          <span class="avatar"></span><span class="profile-name">${escapeHtml(nickname)}</span><span class="down">退出</span>
-        </button>
+        <div class="notification-wrap">
+          <button class="header-icon" data-notifications aria-label="通知" aria-expanded="${state.notificationsOpen}">
+            ${icons.bell}${notifications.length ? `<i></i>` : ""}
+          </button>
+          ${state.notificationsOpen ? notificationPanel(notifications) : ""}
+        </div>
+        <div class="profile-button" aria-label="当前用户">
+          <span class="avatar"></span><span class="profile-name">${escapeHtml(nickname)}</span><button class="down" data-logout type="button">退出</button>
+        </div>
       </header>
       ${content}
       ${state.toast ? `<div class="toast">${state.toast}</div>` : ""}
+    </section>
+  `;
+}
+
+function notificationItems() {
+  const today = localDateKey();
+  return calibrationCardsForPage()
+    .filter((card) => {
+      const verificationDate = String(card.verificationDate || "").slice(0, 10);
+      return card.status === "pending" && verificationDate && verificationDate <= today;
+    })
+    .map((card) => ({
+      id: card.id,
+      title: "焦虑验证时间到了",
+      body: card.worry || "有一张校准卡需要验证",
+      date: String(card.verificationDate || "").slice(0, 10),
+    }));
+}
+
+function notificationPanel(items) {
+  return `
+    <section class="notification-panel" aria-label="通知列表">
+      <h2>通知</h2>
+      ${items.length ? items.map((item) => `
+        <button class="notification-item" data-open-calibration="${item.id}" type="button">
+          <strong>${escapeHtml(item.title)}</strong>
+          <span>${escapeHtml(item.body)}</span>
+          <small>${displayDate(item.date, { full: true })}</small>
+        </button>
+      `).join("") : `<p>暂无新的提醒</p>`}
     </section>
   `;
 }
@@ -2010,8 +2047,16 @@ function buildLocalFollowUp(record) {
 }
 
 app.addEventListener("click", async (event) => {
+  const notificationArea = event.target.closest(".notification-wrap");
+  if (state.notificationsOpen && !notificationArea) {
+    setState({ notificationsOpen: false });
+  }
+
   const target = event.target.closest("button, article[data-detail], article[data-edit-method], article[data-edit-calibration]");
-  if (!target) return;
+  if (!target) {
+    if (state.notificationsOpen && notificationArea) setState({ notificationsOpen: false });
+    return;
+  }
 
   if (target.dataset.authMode) {
     setState({ authMode: target.dataset.authMode });
@@ -2021,6 +2066,22 @@ app.addEventListener("click", async (event) => {
   if (target.dataset.logout !== undefined) {
     clearAuthSession();
     notify("已退出登录");
+    return;
+  }
+
+  if (target.dataset.notifications !== undefined) {
+    setState({ notificationsOpen: !state.notificationsOpen });
+    return;
+  }
+
+  if (target.dataset.openCalibration) {
+    setState({
+      notificationsOpen: false,
+      route: "calibration",
+      tab: "calibration",
+      calibrationTab: "pending",
+      editingCalibrationId: target.dataset.openCalibration,
+    });
     return;
   }
 
