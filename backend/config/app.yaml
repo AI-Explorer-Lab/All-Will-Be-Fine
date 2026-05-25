@@ -7,11 +7,8 @@ db:
 agent:
   provider: rightcode
   base_url: https://www.right.codes/codex/v1
-  api_key: sk-8bbcfa9c26184cdabc9658ece1040e26
   api_key_env: OPENAI_API_KEY
   use_responses_api: true
   stream: true
   model: gpt-5.2
-  http_proxy: http://127.0.0.1:7897
-  https_proxy: http://127.0.0.1:7897
   no_proxy: 127.0.0.1,localhost,right.codes,www.right.codes

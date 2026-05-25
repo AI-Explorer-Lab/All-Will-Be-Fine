@@ -17,7 +17,7 @@ class SlotCompletionService:
     def complete(self, request: CreateReviewRequest, prompt: str) -> tuple[dict[str, Any], list[str]]:
         fallback = build_fallback_slots(request)
         config = load_config().get("agent", {})
-        api_key = config.get("api_key") or resolve_api_key(config.get("api_key_env") or "OPENAI_API_KEY")
+        api_key = resolve_api_key(config.get("api_key_env") or "OPENAI_API_KEY") or config.get("api_key")
         if not api_key:
             return fallback, ["当前未设置大模型 API Key，已使用本地槽位补全"]
 
@@ -82,7 +82,7 @@ class SlotCompletionService:
     def follow_up(self, record: Any, question: str = "", stage: str = "result") -> tuple[dict[str, Any], list[str]]:
         fallback = build_fallback_follow_up(record, question)
         config = load_config().get("agent", {})
-        api_key = config.get("api_key") or resolve_api_key(config.get("api_key_env") or "OPENAI_API_KEY")
+        api_key = resolve_api_key(config.get("api_key_env") or "OPENAI_API_KEY") or config.get("api_key")
         if not api_key:
             return fallback, ["当前未设置大模型 API Key，已使用本地追问建议"]
 

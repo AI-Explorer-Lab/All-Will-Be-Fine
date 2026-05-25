@@ -7,7 +7,7 @@ const {
   summaryTemplates,
 } = window.REVIEW_DATA;
 
-const API_BASE = localStorage.getItem("review_api_base") || "http://127.0.0.1:8000/api";
+const API_BASE = localStorage.getItem("review_api_base") || `${window.location.origin}/api`;
 const AUTH_TOKEN_KEY = "review_auth_token";
 const AUTH_USER_KEY = "review_auth_user";
 const app = document.querySelector("#app");
