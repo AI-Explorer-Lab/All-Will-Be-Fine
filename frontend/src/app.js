@@ -333,7 +333,7 @@ function normalizeRecord(record) {
     summary: record.summary || {},
     resultCard,
     conclusion: record.conclusion || firstValue(resultCard) || "已生成一张可执行的复盘卡。",
-    note: record.note || record.myNote || "这次复盘让我意识到：确认步骤要前置。",
+    note: record.note || record.myNote || "",
     status: savedToMethodLibrary ? "已生成方法卡" : savedToCalibration ? "已加入校准" : "未沉淀",
     savedToMethodLibrary,
     savedToCalibration,
@@ -1419,7 +1419,6 @@ function detailPage() {
       ${fieldGrid([
         ["原始输入", record.rawInput],
         ...detailHighlights(record, mode),
-        ["我的笔记", record.note || "这次复盘让我意识到：确认步骤要前置。"],
       ])}
       <div class="action-row wrap">
         <button class="ghost-button" data-edit-record="${record.id}">编辑复盘内容</button>
@@ -1473,7 +1472,6 @@ function flowEditPage(record) {
           ["summary", compact.summary],
           ["resultCard", compact.resultCard],
         ])}
-        <label>我的笔记<textarea data-record-note>${escapeHtml(record.note || "")}</textarea></label>
       </section>
       <div class="action-row wrap">
         <button class="primary-button" data-save-record="${record.id}">保存修改</button>
@@ -1497,7 +1495,6 @@ function detailEditPage(record) {
           ["summary", compact.summary],
           ["resultCard", compact.resultCard],
         ])}
-        <label>我的笔记<textarea data-record-note>${escapeHtml(record.note || "")}</textarea></label>
       </section>
       <div class="action-row wrap">
         <button class="primary-button" data-save-record="${record.id}">保存</button>
@@ -1830,16 +1827,15 @@ async function saveRecord(id) {
   const oldTitle = record.title;
   const oldScene = record.scene;
   const oldRawInput = record.rawInput;
-  const oldNote = record.note || "";
   const title = editor.querySelector("[data-record-title]").value.trim() || record.title;
   const scene = editor.querySelector("[data-record-scene]").value.trim() || record.scene;
   const rawInput = editor.querySelector("[data-record-raw]").value.trim();
-  const note = editor.querySelector("[data-record-note]").value.trim();
+  const noteInput = editor.querySelector("[data-record-note]");
+  const note = noteInput ? noteInput.value.trim() : record.note || "";
 
   syncFieldValue(oldTitle, title);
   syncFieldValue(oldScene, scene);
   syncFieldValue(oldRawInput, rawInput);
-  syncFieldValue(oldNote, note);
 
   record.title = title;
   record.scene = scene;

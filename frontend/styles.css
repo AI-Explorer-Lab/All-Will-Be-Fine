@@ -1595,7 +1595,6 @@ button:active {
 }
 
 .record-edit-page .detail-editor > label:has(textarea[data-record-raw]),
-.record-edit-page .detail-editor > label:has(textarea[data-record-note]),
 .record-edit-page .edit-fieldset {
   grid-column: 1 / -1;
 }
