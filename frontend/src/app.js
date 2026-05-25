@@ -182,8 +182,7 @@ function handleAuthError(error) {
   return true;
 }
 
-async function submitAuthForm() {
-  const form = app.querySelector("[data-auth-form]");
+async function submitAuthForm(form = app.querySelector("[data-auth-form]")) {
   if (!form || state.authSubmitting) return;
   const username = form.querySelector("[data-auth-username]").value.trim();
   const password = form.querySelector("[data-auth-password]").value;
@@ -193,7 +192,8 @@ async function submitAuthForm() {
     return;
   }
 
-  setState({ authSubmitting: true });
+  state.authSubmitting = true;
+  setAuthFormBusy(form, true);
   try {
     const data = await request(`/auth/${state.authMode === "register" ? "register" : "login"}`, {
       method: "POST",
@@ -206,8 +206,21 @@ async function submitAuthForm() {
     await hydrateFromBackend();
     notify(state.authMode === "register" ? "账号已创建" : "已登录");
   } catch (error) {
-    setState({ authSubmitting: false, apiOnline: false });
+    state.authSubmitting = false;
+    setAuthFormBusy(form, false);
+    state.apiOnline = false;
     notify(error.message || "登录失败");
+  }
+}
+
+function setAuthFormBusy(form, busy) {
+  form.setAttribute("aria-busy", busy ? "true" : "false");
+  form.querySelectorAll("input, button").forEach((element) => {
+    element.disabled = busy;
+  });
+  const submitButton = form.querySelector(".auth-submit");
+  if (submitButton) {
+    submitButton.textContent = busy ? "处理中..." : state.authMode === "register" ? "创建并登录" : "登录";
   }
 }
 
@@ -2121,7 +2134,7 @@ app.addEventListener("click", async (event) => {
 app.addEventListener("submit", async (event) => {
   if (!event.target.matches("[data-auth-form]")) return;
   event.preventDefault();
-  await submitAuthForm();
+  await submitAuthForm(event.target);
 });
 
 app.addEventListener("keydown", (event) => {
