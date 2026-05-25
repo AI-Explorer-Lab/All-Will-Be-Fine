@@ -1,5 +1,8 @@
+import os
 import unittest
 from uuid import uuid4
+
+os.environ["DB_TYPE"] = "memory"
 
 from backend.controller.APIs import review_controller
 from backend.domain.models import UserContext

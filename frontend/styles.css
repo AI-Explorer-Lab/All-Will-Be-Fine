@@ -57,6 +57,92 @@ textarea {
     linear-gradient(132deg, oklch(0.991 0.006 92) 0%, oklch(0.958 0.016 112) 42%, oklch(0.972 0.022 73) 100%);
 }
 
+.app-shell.auth-shell {
+  display: block;
+  grid-template-columns: none;
+}
+
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 56px 28px;
+  background:
+    linear-gradient(132deg, oklch(0.991 0.006 92) 0%, oklch(0.958 0.016 112) 42%, oklch(0.972 0.022 73) 100%);
+}
+
+.auth-panel {
+  width: min(560px, 100%);
+  min-height: auto;
+  display: grid;
+  gap: 30px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 44px 48px;
+  background: rgba(255, 253, 248, 0.88);
+  box-shadow: var(--shadow);
+}
+
+.auth-brand {
+  margin: 0;
+  padding: 0 0 26px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+}
+
+.auth-brand .leaf-logo {
+  width: 58px;
+  height: 58px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 20px;
+}
+
+.auth-form h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.2;
+}
+
+.auth-form p {
+  margin: -8px 0 10px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 8px;
+  color: #604b3d;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.auth-form input {
+  height: 48px;
+  border: 1px solid #ead6c2;
+  border-radius: 8px;
+  outline: 0;
+  padding: 0 14px;
+  color: var(--ink);
+  background: #fffaf3;
+}
+
+.auth-submit {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.text-link {
+  justify-self: center;
+  color: var(--orange-dark);
+  background: transparent;
+  font-weight: 800;
+}
+
 .sidebar {
   position: relative;
   min-height: 100vh;
@@ -256,6 +342,15 @@ textarea {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.profile-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 800;
 }
 
 .avatar {

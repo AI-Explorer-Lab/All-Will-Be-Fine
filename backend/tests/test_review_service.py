@@ -1,4 +1,7 @@
+import os
 import unittest
+
+os.environ["DB_TYPE"] = "memory"
 
 from backend.domain.models import UserContext
 from backend.domain.req import CreateReviewRequest

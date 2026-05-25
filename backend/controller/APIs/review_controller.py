@@ -29,7 +29,7 @@ def list_reviews(user=Depends(get_current_user)):
 
 
 @router.head("/reviews")
-def head_reviews():
+def head_reviews(user=Depends(get_current_user)):
     return Response(status_code=200)
 
 
@@ -54,7 +54,7 @@ def list_methods(user=Depends(get_current_user)):
 
 
 @router.head("/methods")
-def head_methods():
+def head_methods(user=Depends(get_current_user)):
     return Response(status_code=200)
 
 
@@ -74,7 +74,7 @@ def list_calibrations(user=Depends(get_current_user)):
 
 
 @router.head("/calibrations")
-def head_calibrations():
+def head_calibrations(user=Depends(get_current_user)):
     return Response(status_code=200)
 
 

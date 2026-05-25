@@ -15,3 +15,11 @@ class ValidationException(BusinessException):
 
 class NotFoundException(BusinessException):
     code = "NOT_FOUND"
+
+
+class AuthenticationException(BusinessException):
+    code = "UNAUTHORIZED"
+
+
+class ConflictException(BusinessException):
+    code = "CONFLICT"

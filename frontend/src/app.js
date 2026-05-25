@@ -8,6 +8,8 @@ const {
 } = window.REVIEW_DATA;
 
 const API_BASE = localStorage.getItem("review_api_base") || "http://127.0.0.1:8000/api";
+const AUTH_TOKEN_KEY = "review_auth_token";
+const AUTH_USER_KEY = "review_auth_user";
 const app = document.querySelector("#app");
 
 const store = {
@@ -51,6 +53,10 @@ const state = {
   searchComposing: false,
   apiOnline: false,
   toast: "",
+  authToken: localStorage.getItem(AUTH_TOKEN_KEY) || "",
+  authUser: safeJsonParse(localStorage.getItem(AUTH_USER_KEY), null),
+  authMode: "login",
+  authSubmitting: false,
   calendarMonth: localDateKey().slice(0, 7),
   calendarExpanded: false,
 };
@@ -116,22 +122,96 @@ function icon(name) {
 }
 
 function apiStatusText() {
-  return state.apiOnline ? "后端已连接" : "后端未启动，当前使用本地 fallback";
+  return state.apiOnline ? "后端已连接" : "后端未连接";
+}
+
+function safeJsonParse(value, fallback) {
+  try {
+    return value ? JSON.parse(value) : fallback;
+  } catch (error) {
+    return fallback;
+  }
 }
 
 async function request(path, options = {}) {
+  const { auth = true, headers = {}, ...fetchOptions } = options;
+  const requestHeaders = { "Content-Type": "application/json", ...headers };
+  if (auth && state.authToken) {
+    requestHeaders.Authorization = `Bearer ${state.authToken}`;
+  }
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
+    headers: requestHeaders,
+    ...fetchOptions,
   });
   const payload = await response.json();
   if (!response.ok || payload.success === false) {
-    throw new Error(payload.message || "请求失败");
+    const error = new Error(payload.message || "请求失败");
+    error.code = payload.code || (response.status === 401 ? "UNAUTHORIZED" : "REQUEST_ERROR");
+    if (error.code === "UNAUTHORIZED" && auth) clearAuthSession(false);
+    throw error;
   }
   return payload.data;
 }
 
+function setAuthSession(data) {
+  state.authToken = data.access_token;
+  state.authUser = data.user;
+  localStorage.setItem(AUTH_TOKEN_KEY, state.authToken);
+  localStorage.setItem(AUTH_USER_KEY, JSON.stringify(state.authUser));
+}
+
+function clearAuthSession(shouldRender = true) {
+  state.authToken = "";
+  state.authUser = null;
+  state.currentBundle = null;
+  store.records = [];
+  store.methods = [];
+  store.calibrations = [];
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_USER_KEY);
+  if (shouldRender) render();
+}
+
+function handleAuthError(error) {
+  if (error.code !== "UNAUTHORIZED") return false;
+  state.loading = false;
+  state.saving = false;
+  state.followUpLoading = false;
+  state.authSubmitting = false;
+  notify("请先登录后再使用");
+  return true;
+}
+
+async function submitAuthForm() {
+  const form = app.querySelector("[data-auth-form]");
+  if (!form || state.authSubmitting) return;
+  const username = form.querySelector("[data-auth-username]").value.trim();
+  const password = form.querySelector("[data-auth-password]").value;
+  const nickname = form.querySelector("[data-auth-nickname]")?.value.trim() || username;
+  if (!username || !password) {
+    notify("请输入账号和密码");
+    return;
+  }
+
+  setState({ authSubmitting: true });
+  try {
+    const data = await request(`/auth/${state.authMode === "register" ? "register" : "login"}`, {
+      method: "POST",
+      auth: false,
+      body: JSON.stringify({ username, password, nickname }),
+    });
+    setAuthSession(data);
+    setState({ authSubmitting: false, apiOnline: true, route: "home", tab: "review" });
+    await hydrateFromBackend();
+    notify(state.authMode === "register" ? "账号已创建" : "已登录");
+  } catch (error) {
+    setState({ authSubmitting: false, apiOnline: false });
+    notify(error.message || "登录失败");
+  }
+}
+
 async function hydrateFromBackend() {
+  if (!state.authToken) return;
   try {
     const [records, methods, calibrations] = await Promise.all([
       request("/reviews"),
@@ -144,6 +224,7 @@ async function hydrateFromBackend() {
     state.apiOnline = true;
     render();
   } catch (error) {
+    if (handleAuthError(error)) return;
     state.apiOnline = false;
     render();
   }
@@ -168,6 +249,7 @@ async function analyzeDraft() {
     setState({ loading: false, route: "result", apiOnline: true });
     notify(normalized.warnings.length ? normalized.warnings[0] : "已生成行动卡");
   } catch (error) {
+    if (handleAuthError(error)) return;
     const fallback = buildLocalBundle(rawInput, state.mode, state.scene);
     state.currentBundle = fallback;
     setState({ loading: false, route: "result", apiOnline: false });
@@ -441,6 +523,7 @@ async function persistCurrentBundle(destination = "records", options = {}) {
     }
     notify(destination === "methods" ? "记录已保存，并同步到方法库" : destination === "calibration" ? "记录已保存，并同步到校准" : "记录已保存");
   } catch (error) {
+    if (handleAuthError(error)) return;
     const normalized = state.currentBundle;
     upsertRecord(normalized.record);
     if (normalized.methodCard) upsertMethod(normalized.methodCard);
@@ -800,6 +883,7 @@ function parseEditableValue(value, originalValue) {
 }
 
 function shell(content) {
+  const nickname = state.authUser?.nickname || "已登录";
   return `
     <aside class="sidebar">
       <div class="brand">${leafLogo()}<div><div class="brand-name">复盘</div><div class="brand-subtitle">下一次会更好</div></div></div>
@@ -824,11 +908,36 @@ function shell(content) {
           ${icons.search}
         </label>
         <button class="header-icon" data-toast="暂时没有新的提醒" aria-label="通知">${icons.bell}<i></i></button>
-        <button class="profile-button" data-toast="${apiStatusText()}" aria-label="连接状态">
-          <span class="avatar"></span><span class="down">⌄</span>
+        <button class="profile-button" data-logout aria-label="退出登录" title="退出登录">
+          <span class="avatar"></span><span class="profile-name">${escapeHtml(nickname)}</span><span class="down">退出</span>
         </button>
       </header>
       ${content}
+      ${state.toast ? `<div class="toast">${state.toast}</div>` : ""}
+    </section>
+  `;
+}
+
+function authPage() {
+  const isRegister = state.authMode === "register";
+  return `
+    <section class="auth-page">
+      <div class="auth-panel">
+        <div class="brand auth-brand">${leafLogo()}<div><div class="brand-name">复盘</div></div></div>
+        <form class="auth-form" data-auth-form>
+          <h1>${isRegister ? "创建账号" : "登录账号"}</h1>
+          <p>登录后才能使用复盘、方法库和校准功能。</p>
+          <label>账号<input data-auth-username autocomplete="username" placeholder="例如 zhangsan" /></label>
+          ${isRegister ? `<label>昵称<input data-auth-nickname autocomplete="nickname" placeholder="展示名称，可不填" /></label>` : ""}
+          <label>密码<input data-auth-password type="password" autocomplete="${isRegister ? "new-password" : "current-password"}" placeholder="至少 8 位，包含字母和数字" /></label>
+          <button class="primary-button auth-submit" type="submit" ${state.authSubmitting ? "disabled" : ""}>
+            ${state.authSubmitting ? "处理中..." : isRegister ? "创建并登录" : "登录"}
+          </button>
+          <button class="text-link" type="button" data-auth-mode="${isRegister ? "login" : "register"}">
+            ${isRegister ? "已有账号，去登录" : "没有账号，创建一个"}
+          </button>
+        </form>
+      </div>
       ${state.toast ? `<div class="toast">${state.toast}</div>` : ""}
     </section>
   `;
@@ -1533,6 +1642,12 @@ function escapeHtml(value) {
 }
 
 function render() {
+  if (!state.authToken) {
+    app.classList.add("auth-shell");
+    app.innerHTML = authPage();
+    return;
+  }
+  app.classList.remove("auth-shell");
   const workspace = app.querySelector(".workspace");
   const scrollTop = workspace ? workspace.scrollTop : 0;
   const activeElement = document.activeElement;
@@ -1594,6 +1709,7 @@ async function saveMethodCard(id) {
     state.apiOnline = true;
     notify("方法卡已保存");
   } catch (error) {
+    if (handleAuthError(error)) return;
     state.apiOnline = false;
     notify("方法卡暂时只保存在当前页面");
   }
@@ -1646,6 +1762,7 @@ async function saveRecord(id) {
     state.apiOnline = true;
     notify("复盘内容已保存");
   } catch (error) {
+    if (handleAuthError(error)) return;
     state.apiOnline = false;
     notify("复盘内容暂时只保存在当前页面");
   }
@@ -1680,6 +1797,7 @@ async function saveCalibration(id) {
     state.apiOnline = true;
     notify("校准卡已保存");
   } catch (error) {
+    if (handleAuthError(error)) return;
     state.apiOnline = false;
     notify("校准卡暂时只保存在当前页面");
   }
@@ -1736,6 +1854,7 @@ async function deleteResource(kind, id) {
     }
     state.apiOnline = true;
   } catch (error) {
+    if (handleAuthError(error)) return;
     state.apiOnline = false;
   }
   localDeleteByKind[kind](id);
@@ -1757,6 +1876,7 @@ async function requestFollowUp(reviewId) {
     const warnings = response.warnings || [];
     notify(warnings.length ? warnings[0] : "已生成继续追问");
   } catch (error) {
+    if (handleAuthError(error)) return;
     const record = currentRecord();
     const fallback = buildLocalFollowUp(record);
     setState({ followUp: fallback, followUpLoading: false, apiOnline: false });
@@ -1790,6 +1910,17 @@ function buildLocalFollowUp(record) {
 app.addEventListener("click", async (event) => {
   const target = event.target.closest("button, article[data-detail], article[data-edit-calibration]");
   if (!target) return;
+
+  if (target.dataset.authMode) {
+    setState({ authMode: target.dataset.authMode });
+    return;
+  }
+
+  if (target.dataset.logout !== undefined) {
+    clearAuthSession();
+    notify("已退出登录");
+    return;
+  }
 
   if (target.dataset.toast) {
     notify(target.dataset.toast);
@@ -1975,6 +2106,12 @@ app.addEventListener("click", async (event) => {
   if (target.dataset.detail) {
     setState({ selectedRecordId: target.dataset.detail, route: "detail" });
   }
+});
+
+app.addEventListener("submit", async (event) => {
+  if (!event.target.matches("[data-auth-form]")) return;
+  event.preventDefault();
+  await submitAuthForm();
 });
 
 app.addEventListener("keydown", (event) => {

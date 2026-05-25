@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.controller.APIs.auth_controller import router as auth_router
 from backend.controller.APIs.review_controller import router as review_router
 from backend.exceptions.exception_handler import register_exception_handlers
 
@@ -15,6 +16,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     register_exception_handlers(app)
+    app.include_router(auth_router, prefix="/api")
     app.include_router(review_router, prefix="/api")
 
     @app.get("/health")
