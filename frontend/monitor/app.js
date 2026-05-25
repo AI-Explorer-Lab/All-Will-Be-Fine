@@ -1,7 +1,6 @@
 const ADMIN_USER = "admin";
 const TOKEN_KEY = "monitor_admin_token";
 const SESSION_KEY = "monitor_admin_session";
-const REMEMBER_KEY = "monitor_admin_remember";
 const app = document.querySelector("#monitor-app");
 
 const icons = {
@@ -151,7 +150,6 @@ function render() {
 }
 
 function loginView() {
-  const remembered = localStorage.getItem(REMEMBER_KEY) === "1";
   return `<section class="monitor-login">
     <div class="login-frame">
       <div class="login-sky"></div>
@@ -164,13 +162,13 @@ function loginView() {
         <p class="subtitle">仅限管理员访问</p>
         <form class="login-card" data-login-form>
           <label class="field">用户名
-            <span class="input-row">${icons.user}<input name="username" autocomplete="username" value="${remembered ? ADMIN_USER : ""}" placeholder="admin" /></span>
+            <span class="input-row">${icons.user}<input name="username" autocomplete="username" placeholder="请输入管理员账号" /></span>
           </label>
           <label class="field">密码
-            <span class="input-row">${icons.lock}<input name="password" autocomplete="current-password" type="${runtime.passwordVisible ? "text" : "password"}" placeholder="R7!qVt@4LmZ9" /><button class="reveal-button" type="button" data-reveal aria-label="显示或隐藏密码">${icons.eye}</button></span>
+            <span class="input-row">${icons.lock}<input name="password" autocomplete="current-password" type="${runtime.passwordVisible ? "text" : "password"}" placeholder="请输入管理员密码" /><button class="reveal-button" type="button" data-reveal aria-label="显示或隐藏密码">${icons.eye}</button></span>
           </label>
           <div class="login-options">
-            <label class="checkbox"><input type="checkbox" name="remember" ${remembered ? "checked" : ""} />记住我</label>
+            <label class="checkbox"><input type="checkbox" name="remember" />保持登录</label>
             <button class="linklike" type="button" data-forgot>忘记密码?</button>
           </div>
           <button class="login-submit" type="submit">登 录</button>
@@ -458,7 +456,6 @@ app.addEventListener("submit", async (event) => {
     const expiresAt = Date.now() + 1000 * 60 * 60 * 8;
     localStorage.setItem(TOKEN_KEY, data.access_token);
     localStorage.setItem(SESSION_KEY, JSON.stringify({ user: ADMIN_USER, expiresAt }));
-    localStorage.setItem(REMEMBER_KEY, form.remember.checked ? "1" : "0");
     runtime.loggedIn = true;
     runtime.error = "";
     await refreshHealth({ shouldRender: false });
@@ -478,7 +475,7 @@ app.addEventListener("click", async (event) => {
     render();
   }
   if (target.dataset.forgot !== undefined) {
-    runtime.error = "请使用管理员预置密码：R7!qVt@4LmZ9";
+    runtime.error = "请联系管理员重置监控密码";
     render();
   }
   if (target.dataset.logout !== undefined) {
