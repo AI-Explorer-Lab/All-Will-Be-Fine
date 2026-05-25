@@ -7,7 +7,7 @@ const {
   summaryTemplates,
 } = window.REVIEW_DATA;
 
-const API_BASE = localStorage.getItem("review_api_base") || `${window.location.origin}/api`;
+const API_BASE = localStorage.getItem("review_api_base") || defaultApiBase();
 const AUTH_TOKEN_KEY = "review_auth_token";
 const AUTH_USER_KEY = "review_auth_user";
 const app = document.querySelector("#app");
@@ -79,6 +79,14 @@ const icons = {
   back: `<svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
 };
 
+function defaultApiBase() {
+  const { hostname, port, origin } = window.location;
+  if ((hostname === "127.0.0.1" || hostname === "localhost") && port === "5173") {
+    return "http://127.0.0.1:8000/api";
+  }
+  return `${origin}/api`;
+}
+
 function setState(next) {
   Object.assign(state, next);
   render();
@@ -143,7 +151,13 @@ async function request(path, options = {}) {
     headers: requestHeaders,
     ...fetchOptions,
   });
-  const payload = await response.json();
+  const rawPayload = await response.text();
+  let payload;
+  try {
+    payload = rawPayload ? JSON.parse(rawPayload) : {};
+  } catch (_error) {
+    throw new Error(`后端返回了非 JSON 内容，请检查 API 地址：${API_BASE}`);
+  }
   if (!response.ok || payload.success === false) {
     const error = new Error(payload.message || "请求失败");
     error.code = payload.code || (response.status === 401 ? "UNAUTHORIZED" : "REQUEST_ERROR");
@@ -928,7 +942,7 @@ function shell(content) {
       <header class="top-header">
         <label class="search-box">
           <input data-search value="${escapeHtml(state.query)}" placeholder="搜索复盘记录、方法卡片..." />
-          ${icons.search}
+          <button type="button" data-search-submit aria-label="搜索">${icons.search}</button>
         </label>
         <button class="header-icon" data-toast="暂时没有新的提醒" aria-label="通知">${icons.bell}<i></i></button>
         <button class="profile-button" data-logout aria-label="退出登录" title="退出登录">
@@ -1366,6 +1380,27 @@ function calibrationPage() {
   `);
 }
 
+function searchPage() {
+  const query = state.query.trim();
+  const records = query ? store.records.filter((record) => matchesQuery(searchRecordValues(record))) : [];
+  const methods = query ? store.methods.filter((card) => matchesQuery(searchMethodValues(card))) : [];
+  const calibrations = query ? store.calibrations.filter((card) => matchesQuery(searchCalibrationValues(card))) : [];
+  const total = records.length + methods.length + calibrations.length;
+  const emptyText = query ? "没有找到匹配的内容" : "输入关键词后按 Enter 搜索";
+
+  return shell(`
+    <main class="content-page">
+      <h1 class="list-title">搜索结果</h1>
+      ${query ? `<p class="record-meta">找到 ${total} 条与「${escapeHtml(query)}」相关的内容</p>` : ""}
+      ${total ? `
+        ${records.length ? `<section class="search-section"><h2>复盘记录</h2><div class="card-list">${records.map(recordCard).join("")}</div></section>` : ""}
+        ${methods.length ? `<section class="search-section"><h2>方法卡</h2><div class="method-grid">${methods.map(methodCard).join("")}</div></section>` : ""}
+        ${calibrations.length ? `<section class="search-section"><h2>校准卡</h2><div class="card-list">${calibrations.map(calibrationCard).join("")}</div></section>` : ""}
+      ` : emptyState(emptyText)}
+    </main>
+  `);
+}
+
 function detailPage() {
   const record = store.records.find((item) => item.id === state.selectedRecordId) || store.records[0];
   const mode = record.type;
@@ -1566,11 +1601,10 @@ function recordPreviewFields(record, mode) {
 function methodCard(card) {
   const source = methodSourceLabel(card.source);
   return `
-    <article class="list-card method-card">
+    <article class="list-card method-card" data-edit-method="${card.id}" tabindex="0" title="点击编辑">
       <div class="card-title-row">
         <h3>${escapeHtml(card.title)}</h3>
         <div class="inline-actions">
-          <button class="text-button" data-edit-method="${card.id}">编辑</button>
           <button class="text-button danger-text" data-delete-method="${card.id}">删除</button>
         </div>
       </div>
@@ -1652,6 +1686,49 @@ function matchesQuery(values) {
   return values.filter(Boolean).some((value) => String(value).toLowerCase().includes(query));
 }
 
+function searchRecordValues(record) {
+  return [
+    record.title,
+    record.scene,
+    record.rawInput,
+    record.conclusion,
+    record.note,
+    ...flattenSearchValues(record.summary),
+    ...flattenSearchValues(record.resultCard),
+  ];
+}
+
+function searchMethodValues(card) {
+  return [
+    card.title,
+    card.trigger,
+    card.reminder,
+    methodSourceLabel(card.source),
+    ...flattenSearchValues(card.scenes),
+    ...flattenSearchValues(card.steps),
+  ];
+}
+
+function searchCalibrationValues(card) {
+  return [
+    card.worry,
+    card.scene,
+    card.estimatedProbability,
+    card.finalResult,
+    card.actualImpact,
+    card.calibrationConclusion,
+    card.verificationDate,
+  ];
+}
+
+function flattenSearchValues(value) {
+  if (Array.isArray(value)) return value.flatMap(flattenSearchValues);
+  if (value && typeof value === "object") {
+    return Object.entries(value).flatMap(([key, item]) => [key, ...flattenSearchValues(item)]);
+  }
+  return value === undefined || value === null ? [] : [value];
+}
+
 function emptyState(text) {
   return `<article class="list-card"><h3>${text}</h3><p>可以换一个筛选条件，或从首页开始一次新的复盘。</p></article>`;
 }
@@ -1686,6 +1763,7 @@ function render() {
     records: recordsPage,
     methods: methodsPage,
     calibration: calibrationPage,
+    search: searchPage,
     detail: detailPage,
   };
   app.innerHTML = routes[state.route]();
@@ -1700,6 +1778,11 @@ function render() {
       }
     }
   }
+}
+
+function submitSearch(value = state.query) {
+  state.query = value.trim();
+  setState(clearEditingState({ route: "search" }));
 }
 
 async function saveMethodCard(id) {
@@ -1931,7 +2014,7 @@ function buildLocalFollowUp(record) {
 }
 
 app.addEventListener("click", async (event) => {
-  const target = event.target.closest("button, article[data-detail], article[data-edit-calibration]");
+  const target = event.target.closest("button, article[data-detail], article[data-edit-method], article[data-edit-calibration]");
   if (!target) return;
 
   if (target.dataset.authMode) {
@@ -1947,6 +2030,11 @@ app.addEventListener("click", async (event) => {
 
   if (target.dataset.toast) {
     notify(target.dataset.toast);
+  }
+
+  if (target.dataset.searchSubmit !== undefined) {
+    submitSearch(app.querySelector("[data-search]")?.value || "");
+    return;
   }
 
   if (target.dataset.homeAnalyze !== undefined) {
@@ -2145,10 +2233,20 @@ app.addEventListener("keydown", (event) => {
     return;
   }
 
+  if (event.target.matches("[data-search]") && event.key === "Enter") {
+    event.preventDefault();
+    submitSearch(event.target.value);
+    return;
+  }
+
   if (event.target.closest("button, input, textarea, select")) return;
-  const target = event.target.closest("article[data-edit-calibration]");
+  const target = event.target.closest("article[data-edit-method], article[data-edit-calibration]");
   if (!target || (event.key !== "Enter" && event.key !== " ")) return;
   event.preventDefault();
+  if (target.dataset.editMethod) {
+    setState({ editingMethodId: target.dataset.editMethod, tab: "methods", route: "methods" });
+    return;
+  }
   setState({ editingCalibrationId: target.dataset.editCalibration });
 });
 
