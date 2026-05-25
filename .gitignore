@@ -5,3 +5,4 @@ venv/
 .env
 *.pyc
 node_modules/
+.run/
