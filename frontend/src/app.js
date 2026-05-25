@@ -946,7 +946,7 @@ function shell(content) {
           <input data-search value="${escapeHtml(state.query)}" placeholder="搜索复盘记录、方法卡片..." />
           <button type="button" data-search-submit aria-label="搜索">${icons.search}</button>
         </label>
-        <div class="notification-wrap" style="position: relative; display: grid; place-items: center;">
+        <div class="notification-wrap">
           <button class="header-icon" data-notifications aria-label="通知" aria-expanded="${state.notificationsOpen}">
             ${icons.bell}${notifications.length ? `<i></i>` : ""}
           </button>
@@ -979,7 +979,7 @@ function notificationItems() {
 
 function notificationPanel(items) {
   return `
-    <section class="notification-panel" aria-label="通知列表" style="position: absolute; top: calc(100% + 14px); right: -14px; z-index: 20; width: 286px;">
+    <section class="notification-panel" aria-label="通知列表">
       <div class="notification-title">通知</div>
       ${items.length ? items.map((item) => `
         <button class="notification-item" data-open-calibration="${item.id}" type="button">
@@ -1775,7 +1775,47 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+function ensureRuntimeStyles() {
+  if (document.getElementById("runtime-notification-styles")) return;
+  const style = document.createElement("style");
+  style.id = "runtime-notification-styles";
+  style.textContent = `
+    .notification-wrap { position: relative !important; display: grid !important; place-items: center !important; }
+    .notification-panel {
+      position: fixed !important;
+      top: 72px !important;
+      right: 178px !important;
+      z-index: 999 !important;
+      width: 286px !important;
+      padding: 14px !important;
+      border: 1px solid oklch(0.874 0.026 76) !important;
+      border-radius: 8px !important;
+      background: #fffbf6 !important;
+      box-shadow: 0 14px 36px oklch(0.34 0.044 55 / 0.09) !important;
+      color: oklch(0.214 0.025 58) !important;
+      text-align: left !important;
+    }
+    .notification-title { margin: 0 0 10px !important; font-size: 16px !important; font-weight: 800 !important; line-height: 1.4 !important; }
+    .notification-panel p { margin: 0 !important; color: oklch(0.482 0.035 62) !important; font-size: 13px !important; line-height: 1.6 !important; }
+    .notification-item {
+      width: 100% !important;
+      display: grid !important;
+      gap: 5px !important;
+      padding: 10px !important;
+      border-radius: 8px !important;
+      background: transparent !important;
+      color: inherit !important;
+      text-align: left !important;
+    }
+    .notification-item:hover, .notification-item:focus-visible { background: oklch(0.944 0.043 58) !important; }
+    .notification-item strong { font-size: 14px !important; line-height: 1.4 !important; }
+    .notification-item span, .notification-item small { color: oklch(0.482 0.035 62) !important; font-size: 12px !important; line-height: 1.5 !important; }
+  `;
+  document.head.appendChild(style);
+}
+
 function render() {
+  ensureRuntimeStyles();
   if (!state.authToken) {
     app.classList.add("auth-shell");
     app.innerHTML = authPage();
