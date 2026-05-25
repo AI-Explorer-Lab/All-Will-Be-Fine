@@ -444,7 +444,7 @@ textarea {
 
 .input-footer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 16px;
   min-height: 52px;
@@ -461,11 +461,6 @@ textarea {
   font-size: 14px;
   font-weight: 700;
   line-height: 1.5;
-}
-
-.input-footer span {
-  min-width: 70px;
-  text-align: right;
 }
 
 .primary-button,

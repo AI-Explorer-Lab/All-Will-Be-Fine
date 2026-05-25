@@ -53,11 +53,67 @@ class ReviewService:
         self.mapper.save_review(record, user.user_id)
         return record
 
+    def update_record_payload(self, review_id: str, payload: dict, user: UserContext) -> ReviewRecord:
+        existing = self.mapper.get_review(review_id, user.user_id)
+        if existing is None:
+            raise NotFoundException("review record not found")
+        record = ReviewRecord(
+            id=review_id,
+            type=payload.get("type", existing.type),
+            scene=payload.get("scene", existing.scene),
+            title=payload.get("title", existing.title),
+            raw_input=payload.get("raw_input") or payload.get("rawInput") or existing.raw_input,
+            summary=payload.get("summary", existing.summary),
+            result_card=payload.get("result_card") or payload.get("resultCard") or existing.result_card,
+            created_at=payload.get("created_at") or payload.get("createdAt") or existing.created_at,
+            updated_at=payload.get("updated_at") or payload.get("updatedAt") or _now_iso(),
+            note=payload.get("note", existing.note),
+            saved_to_method_library=bool(payload.get("saved_to_method_library", payload.get("savedToMethodLibrary", existing.saved_to_method_library))),
+            saved_to_calibration=bool(payload.get("saved_to_calibration", payload.get("savedToCalibration", existing.saved_to_calibration))),
+        )
+        _compact_record_fields(record)
+        return self.mapper.save_review(record, user.user_id)
+
     def list_methods(self, user: UserContext) -> list[MethodCard]:
         return self.mapper.list_methods(user.user_id)
 
     def list_calibrations(self, user: UserContext) -> list[CalibrationCard]:
         return self.mapper.list_calibrations(user.user_id)
+
+    def update_method_payload(self, method_id: str, payload: dict, user: UserContext) -> MethodCard:
+        existing = next((card for card in self.mapper.list_methods(user.user_id) if card.id == method_id), None)
+        if existing is None:
+            raise NotFoundException("method card not found")
+        card = MethodCard(
+            id=method_id,
+            source_review_id=payload.get("source_review_id") or payload.get("sourceReviewId") or existing.source_review_id,
+            title=payload.get("title", existing.title),
+            scenes=_as_list(payload.get("scenes")) or existing.scenes,
+            trigger=payload.get("trigger", existing.trigger),
+            steps=_as_list(payload.get("steps")) or existing.steps,
+            reminder=payload.get("reminder", existing.reminder),
+            created_at=payload.get("created_at") or payload.get("createdAt") or existing.created_at,
+            updated_at=payload.get("updated_at") or payload.get("updatedAt") or _now_iso(),
+        )
+        return self.mapper.save_method(card, user.user_id)
+
+    def update_calibration_payload(self, calibration_id: str, payload: dict, user: UserContext) -> CalibrationCard:
+        existing = next((card for card in self.mapper.list_calibrations(user.user_id) if card.id == calibration_id), None)
+        if existing is None:
+            raise NotFoundException("calibration card not found")
+        card = CalibrationCard(
+            id=calibration_id,
+            source_review_id=payload.get("source_review_id") or payload.get("sourceReviewId") or existing.source_review_id,
+            worry=payload.get("worry", existing.worry),
+            scene=payload.get("scene", existing.scene),
+            estimated_probability=payload.get("estimated_probability") or payload.get("estimatedProbability") or existing.estimated_probability,
+            verification_date=payload.get("verification_date") or payload.get("verificationDate") or existing.verification_date,
+            status=payload.get("status", existing.status),
+            final_result=payload.get("final_result") or payload.get("finalResult") or existing.final_result,
+            actual_impact=payload.get("actual_impact") or payload.get("actualImpact") or existing.actual_impact,
+            calibration_conclusion=payload.get("calibration_conclusion") or payload.get("calibrationConclusion") or existing.calibration_conclusion,
+        )
+        return self.mapper.save_calibration(card, user.user_id)
 
     def update_note(self, review_id: str, request: UpdateNoteRequest, user: UserContext) -> dict[str, str]:
         if self.mapper.get_review(review_id, user.user_id) is None:

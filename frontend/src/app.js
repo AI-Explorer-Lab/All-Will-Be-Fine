@@ -317,6 +317,52 @@ function upsertCalibration(card) {
   store.calibrations = [card, ...store.calibrations.filter((item) => item.id !== card.id)];
 }
 
+function recordPayload(record) {
+  return {
+    id: record.id,
+    type: record.type,
+    scene: record.scene,
+    title: record.title,
+    raw_input: record.rawInput,
+    summary: record.summary,
+    result_card: record.resultCard,
+    note: record.note || "",
+    created_at: record.date,
+    updated_at: localDateKey(),
+    saved_to_method_library: Boolean(record.savedToMethodLibrary),
+    saved_to_calibration: Boolean(record.savedToCalibration),
+  };
+}
+
+function methodPayload(card) {
+  return {
+    id: card.id,
+    source_review_id: card.sourceReviewId || "",
+    title: card.title,
+    scenes: card.scenes || [],
+    trigger: card.trigger || "",
+    steps: card.steps || [],
+    reminder: card.reminder || "",
+    created_at: card.createdAt || localDateKey(),
+    updated_at: localDateKey(),
+  };
+}
+
+function calibrationPayload(card) {
+  return {
+    id: card.id,
+    source_review_id: card.sourceReviewId || "",
+    worry: card.worry,
+    scene: card.scene,
+    estimated_probability: card.estimatedProbability,
+    verification_date: card.verificationDate,
+    status: card.status,
+    final_result: card.finalResult,
+    actual_impact: card.actualImpact,
+    calibration_conclusion: card.calibrationConclusion,
+  };
+}
+
 function bundlePayload(bundle) {
   const includeMethod = Boolean(bundle.includeMethodCard);
   const includeCalibration = Boolean(bundle.includeCalibrationCard);
@@ -857,7 +903,6 @@ function homePage() {
             ${structuredDraftForm(mode)}
             <div class="input-footer">
               <strong>${mode === "event" ? "先写清楚，再变成下次可用的行动卡" : "把担心拆成现实检查和可控行动"}</strong>
-              <span>${composeDraftInput().length} / 2000</span>
               <button class="ghost-button" data-home-ai ${state.loading ? "disabled" : ""}>${state.loading ? "生成中..." : "AI 复盘"}</button>
               <button class="primary-button" data-home-analyze>开始复盘</button>
             </div>
@@ -1519,7 +1564,7 @@ function render() {
   }
 }
 
-function saveMethodCard(id) {
+async function saveMethodCard(id) {
   const editor = app.querySelector(`[data-method-editor="${id}"]`);
   const card = store.methods.find((item) => item.id === id);
   if (!editor || !card) return;
@@ -1540,11 +1585,22 @@ function saveMethodCard(id) {
     steps: steps.length ? steps : card.steps,
     updatedAt: localDateKey(),
   });
+  try {
+    const saved = await request(`/methods/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(methodPayload(card)),
+    });
+    Object.assign(card, normalizeMethod(saved));
+    state.apiOnline = true;
+    notify("方法卡已保存");
+  } catch (error) {
+    state.apiOnline = false;
+    notify("方法卡暂时只保存在当前页面");
+  }
   setState({ editingMethodId: null });
-  notify("方法卡已更新");
 }
 
-function saveRecord(id) {
+async function saveRecord(id) {
   const editor = app.querySelector(`[data-record-editor="${id}"]`);
   const record = store.records.find((item) => item.id === id) || (state.currentBundle?.record?.id === id ? state.currentBundle.record : null);
   if (!editor || !record) return;
@@ -1581,12 +1637,23 @@ function saveRecord(id) {
   });
 
   record.conclusion = firstValue(record.resultCard) || record.conclusion;
+  try {
+    const saved = await request(`/reviews/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(recordPayload(record)),
+    });
+    Object.assign(record, normalizeRecord(saved));
+    state.apiOnline = true;
+    notify("复盘内容已保存");
+  } catch (error) {
+    state.apiOnline = false;
+    notify("复盘内容暂时只保存在当前页面");
+  }
   if (state.currentBundle?.record?.id === record.id) state.currentBundle.record = record;
   setState({ editingRecordId: null });
-  notify("复盘内容已更新");
 }
 
-function saveCalibration(id) {
+async function saveCalibration(id) {
   const editor = app.querySelector(`[data-calibration-editor="${id}"]`);
   const card = store.calibrations.find((item) => item.id === id);
   if (!editor || !card) return;
@@ -1604,8 +1671,19 @@ function saveCalibration(id) {
 
   Object.entries(updates).forEach(([key, value]) => syncFieldValue(card[key], value));
   Object.assign(card, updates);
+  try {
+    const saved = await request(`/calibrations/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(calibrationPayload(card)),
+    });
+    Object.assign(card, normalizeCalibration(saved));
+    state.apiOnline = true;
+    notify("校准卡已保存");
+  } catch (error) {
+    state.apiOnline = false;
+    notify("校准卡暂时只保存在当前页面");
+  }
   setState({ editingCalibrationId: null });
-  notify("校准卡已更新");
 }
 
 function localDeleteRecord(id) {
@@ -1743,17 +1821,17 @@ app.addEventListener("click", async (event) => {
   }
 
   if (target.dataset.saveMethod) {
-    saveMethodCard(target.dataset.saveMethod);
+    await saveMethodCard(target.dataset.saveMethod);
     return;
   }
 
   if (target.dataset.saveRecord) {
-    saveRecord(target.dataset.saveRecord);
+    await saveRecord(target.dataset.saveRecord);
     return;
   }
 
   if (target.dataset.saveCalibration) {
-    saveCalibration(target.dataset.saveCalibration);
+    await saveCalibration(target.dataset.saveCalibration);
     return;
   }
 
@@ -1910,14 +1988,12 @@ app.addEventListener("keydown", (event) => {
 app.addEventListener("input", (event) => {
   if (event.target.matches("[data-draft]")) {
     state.draft = event.target.value;
-    const count = app.querySelector(".textarea-count, .input-footer span");
-    if (count) count.textContent = `${composeDraftInput().length} / 2000`;
+    const count = app.querySelector(".textarea-count");
+    if (count) count.textContent = `${state.draft.length} / 2000`;
   }
 
   if (event.target.matches("[data-draft-field]")) {
     state.draftFields[state.mode][event.target.dataset.draftField] = event.target.value;
-    const count = app.querySelector(".input-footer span");
-    if (count) count.textContent = `${composeDraftInput().length} / 2000`;
   }
 
   if (event.target.matches("[data-search]")) {

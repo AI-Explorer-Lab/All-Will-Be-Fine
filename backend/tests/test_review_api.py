@@ -108,6 +108,61 @@ class ReviewApiBoundaryTest(unittest.TestCase):
         self.assertTrue(review_response["success"])
         self.assertNotIn(review_id, [item["id"] for item in review_controller.list_reviews(user=delete_user)["data"]])
 
+    def test_update_review_method_and_calibration_persist(self):
+        user = UserContext(user_id=f"api-update-user-{uuid4().hex}")
+        event = review_controller.analyze_review(
+            {"type": "event", "scene": "work", "raw_input": "initial event"},
+            user=user,
+        )
+        review_id = event["data"]["record"]["id"]
+        method_id = event["data"]["method_card"]["id"]
+
+        review_controller.update_review(
+            review_id,
+            {
+                **event["data"]["record"],
+                "title": "updated review title",
+                "raw_input": "updated raw input",
+                "summary": {"发生了什么": "updated summary"},
+                "result_card": {"下次怎么做": ["updated step"]},
+            },
+            user=user,
+        )
+        review_controller.update_method(
+            method_id,
+            {
+                **event["data"]["method_card"],
+                "title": "updated method title",
+                "trigger": "updated trigger",
+                "steps": ["updated method step"],
+            },
+            user=user,
+        )
+
+        anxiety = review_controller.analyze_review(
+            {"type": "anxiety", "scene": "work", "raw_input": "initial worry"},
+            user=user,
+        )
+        calibration_id = anxiety["data"]["calibration_card"]["id"]
+        review_controller.update_calibration(
+            calibration_id,
+            {
+                **anxiety["data"]["calibration_card"],
+                "worry": "updated worry",
+                "estimated_probability": "55%",
+                "verification_date": "2026-05-30",
+            },
+            user=user,
+        )
+
+        records = review_controller.list_reviews(user=user)["data"]
+        methods = review_controller.list_methods(user=user)["data"]
+        calibrations = review_controller.list_calibrations(user=user)["data"]
+
+        self.assertEqual(next(item for item in records if item["id"] == review_id)["title"], "updated review title")
+        self.assertEqual(next(item for item in methods if item["id"] == method_id)["title"], "updated method title")
+        self.assertEqual(next(item for item in calibrations if item["id"] == calibration_id)["worry"], "updated worry")
+
     def test_follow_up_review_returns_question(self):
         follow_user = UserContext(user_id="api-follow-user")
         event = review_controller.analyze_review(
