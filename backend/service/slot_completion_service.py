@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -11,21 +12,28 @@ from urllib.parse import urlparse
 from backend.config.config import load_config
 from backend.constant.review_constants import ANXIETY_TYPE, EVENT_TYPE
 from backend.domain.req import CreateReviewRequest
+from backend.service.monitor_service import record_ai_metric
 
 
 class SlotCompletionService:
     def complete(self, request: CreateReviewRequest, prompt: str) -> tuple[dict[str, Any], list[str]]:
+        started = time.perf_counter()
         fallback = build_fallback_slots(request)
         config = load_config().get("agent", {})
         api_key = resolve_api_key(config.get("api_key_env") or "OPENAI_API_KEY") or config.get("api_key")
         if not api_key:
-            return fallback, ["当前未设置大模型 API Key，已使用本地槽位补全"]
+            warning = "当前未设置大模型 API Key，已使用本地槽位补全"
+            record_ai_metric("slot_completion", False, True, int((time.perf_counter() - started) * 1000), warning)
+            return fallback, [warning]
 
         try:
             ai_slots = self._complete_with_responses_api(request, prompt, config, api_key)
+            record_ai_metric("slot_completion", True, False, int((time.perf_counter() - started) * 1000))
             return merge_slots(fallback, ai_slots), []
         except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
-            return fallback, [f"大模型槽位补全失败，已使用本地兜底：{format_completion_error(error)}"]
+            warning = f"大模型槽位补全失败，已使用本地兜底：{format_completion_error(error)}"
+            record_ai_metric("slot_completion", False, True, int((time.perf_counter() - started) * 1000), warning)
+            return fallback, [warning]
 
     def _complete_with_responses_api(
         self,
@@ -80,17 +88,23 @@ class SlotCompletionService:
         return json.loads(text)
 
     def follow_up(self, record: Any, question: str = "", stage: str = "result") -> tuple[dict[str, Any], list[str]]:
+        started = time.perf_counter()
         fallback = build_fallback_follow_up(record, question)
         config = load_config().get("agent", {})
         api_key = resolve_api_key(config.get("api_key_env") or "OPENAI_API_KEY") or config.get("api_key")
         if not api_key:
-            return fallback, ["当前未设置大模型 API Key，已使用本地追问建议"]
+            warning = "当前未设置大模型 API Key，已使用本地追问建议"
+            record_ai_metric("follow_up", False, True, int((time.perf_counter() - started) * 1000), warning)
+            return fallback, [warning]
 
         try:
             ai_result = self._follow_up_with_responses_api(record, question, stage, config, api_key)
+            record_ai_metric("follow_up", True, False, int((time.perf_counter() - started) * 1000))
             return merge_mapping(fallback, ai_result), []
         except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
-            return fallback, [f"大模型继续追问失败，已使用本地兜底：{format_completion_error(error)}"]
+            warning = f"大模型继续追问失败，已使用本地兜底：{format_completion_error(error)}"
+            record_ai_metric("follow_up", False, True, int((time.perf_counter() - started) * 1000), warning)
+            return fallback, [warning]
 
     def _follow_up_with_responses_api(
         self,
