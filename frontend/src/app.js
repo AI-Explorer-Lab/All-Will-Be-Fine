@@ -1291,7 +1291,7 @@ function resultPage() {
   const title = state.mode === "event" ? "行动卡" : "焦虑校准卡";
   return shell(`
     <main class="content-page narrow-page">
-      <div class="page-header"><h1>${title}</h1></div>
+      ${pageHeader(title, "home")}
       ${fieldGrid(objectFields(record.resultCard, resultCards[state.mode].fields))}
       <div class="action-row wrap">
         <button class="ghost-button" data-follow-up="${record.id}" ${state.followUpLoading ? "disabled" : ""}>${state.followUpLoading ? "追问中..." : "继续追问"}</button>
