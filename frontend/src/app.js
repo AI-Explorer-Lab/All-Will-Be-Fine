@@ -2110,6 +2110,11 @@ app.addEventListener("click", async (event) => {
   }
 
   if (target.dataset.notifications !== undefined) {
+    if (!notificationItems().length) {
+      setState({ notificationsOpen: false });
+      notify("暂无新的提醒");
+      return;
+    }
     setState({ notificationsOpen: !state.notificationsOpen });
     return;
   }
