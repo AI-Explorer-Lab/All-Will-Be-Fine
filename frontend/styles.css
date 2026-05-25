@@ -316,6 +316,27 @@ textarea {
   color: #5f4739;
 }
 
+.search-box button {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: #5f4739;
+  background: transparent;
+}
+
+.search-box button:hover,
+.search-box button:focus-visible {
+  background: oklch(0.94 0.026 75);
+}
+
+.search-box button svg {
+  width: 18px;
+  height: 18px;
+}
+
 .header-icon,
 .profile-button {
   background: transparent;
@@ -1296,6 +1317,18 @@ button:active {
   gap: 18px;
 }
 
+.search-section {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.search-section h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 18px;
+}
+
 .method-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -1315,11 +1348,13 @@ button:active {
 }
 
 .list-card[data-detail],
+.list-card[data-edit-method],
 .list-card[data-edit-calibration] {
   cursor: pointer;
 }
 
 .list-card[data-detail]:hover,
+.list-card[data-edit-method]:hover,
 .list-card[data-edit-calibration]:hover {
   transform: translateY(-3px);
   border-color: oklch(0.8 0.054 64);
