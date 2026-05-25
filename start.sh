@@ -4,11 +4,25 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="${ROOT_DIR}/.run/logs"
 PID_DIR="${ROOT_DIR}/.run/pids"
+VENV_DIR="${VENV_DIR:-${ROOT_DIR}/.venv}"
 
 BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
-BACKEND_PORT="${BACKEND_PORT:-8000}"
+if [[ -z "${BACKEND_PORT:-}" ]]; then
+  if [[ -f /etc/nginx/sites-enabled/all-will-be-fine ]]; then
+    BACKEND_PORT="8002"
+  else
+    BACKEND_PORT="8000"
+  fi
+fi
 FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
+if [[ -z "${PUBLIC_FRONTEND_DIR:-}" && -f /etc/nginx/sites-enabled/all-will-be-fine ]]; then
+  PUBLIC_FRONTEND_DIR="/var/www/all-will-be-fine"
+fi
+if [[ -z "${SKIP_FRONTEND_SERVER:-}" && -n "${PUBLIC_FRONTEND_DIR:-}" ]]; then
+  SKIP_FRONTEND_SERVER="1"
+fi
+RESTART_BACKEND="${RESTART_BACKEND:-1}"
 
 DB_CONTAINER="${DB_CONTAINER:-all-will-be-fine-postgres}"
 DB_HOST="${DB_HOST:-127.0.0.1}"
@@ -53,6 +67,18 @@ pid_alive() {
   [[ -f "${pid_file}" ]] && kill -0 "$(cat "${pid_file}")" >/dev/null 2>&1
 }
 
+stop_pid_file() {
+  local pid_file="$1"
+  if pid_alive "${pid_file}"; then
+    local pid
+    pid="$(cat "${pid_file}")"
+    info "Stopping previous backend PID ${pid}"
+    kill "${pid}" >/dev/null 2>&1 || true
+    sleep 1
+  fi
+  rm -f "${pid_file}"
+}
+
 port_open() {
   local host="$1"
   local port="$2"
@@ -90,7 +116,44 @@ ensure_python_deps() {
     return
   fi
 
+  if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
+    info "Creating Python virtual environment at ${VENV_DIR}"
+    if ! "${PYTHON_BIN}" -m venv "${VENV_DIR}" >/dev/null 2>&1; then
+      warn "python venv is not available for ${PYTHON_BIN}"
+      if has_cmd sudo && has_cmd apt-get; then
+        info "Installing python3-venv with apt-get"
+        sudo apt-get update
+        sudo apt-get install -y python3-venv
+      elif has_cmd apt-get && [[ "$(id -u)" == "0" ]]; then
+        info "Installing python3-venv with apt-get"
+        apt-get update
+        apt-get install -y python3-venv
+      else
+        fail "venv is required. Install it with: sudo apt-get update && sudo apt-get install -y python3-venv"
+      fi
+      "${PYTHON_BIN}" -m venv "${VENV_DIR}"
+    fi
+  fi
+
+  PYTHON_BIN="${VENV_DIR}/bin/python"
+
+  if ! "${PYTHON_BIN}" -m pip --version >/dev/null 2>&1; then
+    warn "pip is not available in ${VENV_DIR}"
+    if has_cmd sudo && has_cmd apt-get; then
+      info "Installing python3-pip with apt-get"
+      sudo apt-get update
+      sudo apt-get install -y python3-pip
+    elif has_cmd apt-get && [[ "$(id -u)" == "0" ]]; then
+      info "Installing python3-pip with apt-get"
+      apt-get update
+      apt-get install -y python3-pip
+    else
+      fail "pip is required. Install it with: sudo apt-get update && sudo apt-get install -y python3-pip"
+    fi
+  fi
+
   info "Installing backend Python dependencies"
+  "${PYTHON_BIN}" -m pip install --upgrade pip
   "${PYTHON_BIN}" -m pip install -r "${ROOT_DIR}/backend/requirements.txt"
 }
 
@@ -130,7 +193,18 @@ start_database() {
 start_backend() {
   local pid_file="${PID_DIR}/backend.pid"
 
-  if pid_alive "${pid_file}"; then
+  if [[ "${RESTART_BACKEND}" == "1" ]]; then
+    stop_pid_file "${pid_file}"
+    if has_cmd pgrep; then
+      local pids
+      pids="$(pgrep -f "uvicorn backend.main:app.*--port ${BACKEND_PORT}" || true)"
+      if [[ -n "${pids}" ]]; then
+        info "Stopping existing backend process on port ${BACKEND_PORT}: ${pids//$'\n'/ }"
+        pkill -f "uvicorn backend.main:app.*--port ${BACKEND_PORT}" || true
+        sleep 1
+      fi
+    fi
+  elif pid_alive "${pid_file}"; then
     info "Backend is already running with PID $(cat "${pid_file}")"
     return
   fi
@@ -151,7 +225,28 @@ start_backend() {
   wait_for_port "Backend" "${BACKEND_HOST}" "${BACKEND_PORT}" 30
 }
 
+deploy_frontend() {
+  if [[ -z "${PUBLIC_FRONTEND_DIR:-}" ]]; then
+    return
+  fi
+
+  info "Publishing frontend to ${PUBLIC_FRONTEND_DIR}"
+  if has_cmd sudo; then
+    sudo mkdir -p "${PUBLIC_FRONTEND_DIR}"
+    sudo cp -a "${ROOT_DIR}/frontend/." "${PUBLIC_FRONTEND_DIR}/"
+    sudo chown -R www-data:www-data "${PUBLIC_FRONTEND_DIR}" 2>/dev/null || true
+  else
+    mkdir -p "${PUBLIC_FRONTEND_DIR}"
+    cp -a "${ROOT_DIR}/frontend/." "${PUBLIC_FRONTEND_DIR}/"
+  fi
+}
+
 start_frontend() {
+  if [[ "${SKIP_FRONTEND_SERVER:-0}" == "1" ]]; then
+    info "Skipping local frontend server because frontend is published to ${PUBLIC_FRONTEND_DIR}"
+    return
+  fi
+
   local pid_file="${PID_DIR}/frontend.pid"
 
   if pid_alive "${pid_file}"; then
@@ -179,9 +274,10 @@ print_summary() {
 
 Started all-will-be-fine.
 
-Frontend: http://${FRONTEND_HOST}:${FRONTEND_PORT}
 Backend:  http://${BACKEND_HOST}:${BACKEND_PORT}
 Database: ${DB_TYPE}
+Public frontend files: ${PUBLIC_FRONTEND_DIR:-not configured}
+Local frontend server: $([[ "${SKIP_FRONTEND_SERVER:-0}" == "1" ]] && echo "skipped" || echo "http://${FRONTEND_HOST}:${FRONTEND_PORT}")
 
 Logs:
   ${LOG_DIR}/backend.log
@@ -195,5 +291,6 @@ EOF
 ensure_python_deps
 start_database
 start_backend
+deploy_frontend
 start_frontend
 print_summary
