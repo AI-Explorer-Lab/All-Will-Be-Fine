@@ -2138,6 +2138,13 @@ app.addEventListener("submit", async (event) => {
 });
 
 app.addEventListener("keydown", (event) => {
+  const authForm = event.target.closest?.("[data-auth-form]");
+  if (authForm && event.key === "Enter" && event.target.matches("input")) {
+    event.preventDefault();
+    authForm.requestSubmit();
+    return;
+  }
+
   if (event.target.closest("button, input, textarea, select")) return;
   const target = event.target.closest("article[data-edit-calibration]");
   if (!target || (event.key !== "Enter" && event.key !== " ")) return;
