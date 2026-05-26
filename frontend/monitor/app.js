@@ -1,6 +1,7 @@
 const ADMIN_USER = "admin";
 const TOKEN_KEY = "monitor_admin_token";
 const SESSION_KEY = "monitor_admin_session";
+const MONITOR_TIME_ZONE = "Asia/Shanghai";
 const app = document.querySelector("#monitor-app");
 
 const icons = {
@@ -372,7 +373,7 @@ function healthTable(rows = []) {
     row.status,
     row.latency_ms === null || row.latency_ms === undefined ? "-" : `${row.latency_ms}ms`,
     row.error || "-",
-    row.checked_at ? formatTime(new Date(row.checked_at)) : formatTime(runtime.lastRefresh),
+    row.checked_at ? formatTime(parseMonitorDate(row.checked_at)) : formatTime(runtime.lastRefresh),
   ]) : [["后端服务", runtime.healthOk ? "正常" : "异常", runtime.healthLatency, runtime.healthOk ? "-" : runtime.health, formatTime(runtime.lastRefresh)]];
   return `<table class="health-table"><thead><tr><th>组件</th><th>状态</th><th>延迟</th><th>最近错误</th><th>检查时间</th></tr></thead><tbody>
     ${displayRows.map((row) => `<tr><td>${row[0]}</td><td class="${row[1] === "异常" || row[1] === "缺失" ? "bad-text" : "ok-text"}">● ${row[1]}</td><td>${row[2]}</td><td>${row[3]}</td><td>${row[4]}</td></tr>`).join("")}
@@ -419,7 +420,7 @@ function apiTable(rows = []) {
 }
 
 function errorList(rows = []) {
-  const displayRows = rows.map((row) => [row.method, row.path, row.status_code, row.error, row.created_at ? formatTime(new Date(row.created_at)) : "-"]);
+  const displayRows = rows.map((row) => [row.method, row.path, row.status_code, row.error, row.created_at ? formatTime(parseMonitorDate(row.created_at)) : "-"]);
   if (!displayRows.length) return `<div class="empty-panel muted">暂无错误请求</div>`;
   return `<div class="error-list">${displayRows.map(([method, path, code, text, time]) => `<div class="error-item">
     <span class="method-tag ${method === "PATCH" ? "patch" : ""}">${method}</span>
@@ -451,7 +452,7 @@ function aiQuality(data = fallbackSummary().ai_quality) {
       <div class="subpanel">
         <h3>最近 AI 警告信息</h3>
         <div class="warning-list">
-          ${warnings.map((item) => `<div class="warning-item"><span class="bad-text">△</span><span>${item.message}</span><span class="muted">${item.created_at ? formatTime(new Date(item.created_at)) : "-"}</span></div>`).join("")}
+          ${warnings.map((item) => `<div class="warning-item"><span class="bad-text">△</span><span>${item.message}</span><span class="muted">${item.created_at ? formatTime(parseMonitorDate(item.created_at)) : "-"}</span></div>`).join("")}
         </div>
       </div>
     </div>
@@ -489,7 +490,7 @@ function configTable(data) {
 function usersTable(users = []) {
   if (!users.length) return `<div class="empty-panel muted">暂无用户数据</div>`;
   return `<table class="api-table users-table"><thead><tr><th>用户名</th><th>昵称</th><th>用户 ID</th><th>创建时间</th></tr></thead><tbody>
-    ${users.map((user) => `<tr><td>${user.username || "-"}</td><td>${user.nickname || "-"}</td><td>${user.id || "-"}</td><td>${user.created_at ? formatDateTime(new Date(user.created_at)) : "-"}</td></tr>`).join("")}
+    ${users.map((user) => `<tr><td>${user.username || "-"}</td><td>${user.nickname || "-"}</td><td>${user.id || "-"}</td><td>${user.created_at ? formatDateTime(parseMonitorDate(user.created_at)) : "-"}</td></tr>`).join("")}
   </tbody></table>`;
 }
 
@@ -502,7 +503,7 @@ function recordList(pending = fallbackSummary().pending) {
   const rows = pending?.recent_records?.length ? pending.recent_records : [{ title: "暂无复盘记录", type: "event", created_at: "" }];
   return `<div class="subpanel"><h3>最近创建的复盘记录</h3><div class="record-list">${rows.map((item) => {
     const kind = item.type === "anxiety" ? "焦虑" : "事件";
-    return `<div class="record-item"><span class="record-title">${item.title}</span><span class="record-meta"><span class="record-kind ${kind === "焦虑" ? "anxiety" : ""}">${kind}</span><span class="muted">${item.created_at ? formatTime(new Date(item.created_at)) : "-"}</span></span></div>`;
+    return `<div class="record-item"><span class="record-title">${item.title}</span><span class="record-meta"><span class="record-kind ${kind === "焦虑" ? "anxiety" : ""}">${kind}</span><span class="muted">${item.created_at ? formatTime(parseMonitorDate(item.created_at)) : "-"}</span></span></div>`;
   }).join("")}</div></div>`;
 }
 
@@ -529,12 +530,19 @@ async function refreshHealth({ shouldRender = true } = {}) {
 }
 
 function formatTime(date) {
-  return date.toLocaleTimeString("zh-CN", { hour12: false });
+  return date.toLocaleTimeString("zh-CN", { hour12: false, timeZone: MONITOR_TIME_ZONE });
 }
 
 function formatDateTime(date) {
-  const datePart = date.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }).replace(/\//g, "-");
+  const datePart = date.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: MONITOR_TIME_ZONE }).replace(/\//g, "-");
   return `${datePart} ${formatTime(date)}`;
+}
+
+function parseMonitorDate(value) {
+  if (value instanceof Date) return value;
+  if (typeof value !== "string" || !value) return new Date();
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value);
+  return new Date(hasZone ? value : `${value}Z`);
 }
 
 app.addEventListener("submit", async (event) => {
