@@ -715,7 +715,7 @@ button {
 }
 
 .split-bar span {
-  min-width: 2px;
+  min-width: 0;
 }
 
 .split-bar .event {
