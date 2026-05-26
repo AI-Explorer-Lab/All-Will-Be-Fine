@@ -136,7 +136,7 @@ class MonitorService:
         request_snapshot = self._request_snapshot()
         ai_snapshot = self._ai_snapshot()
         return {
-            "generated_at": now.isoformat(timespec="seconds"),
+            "generated_at": _format_utc(now),
             "environment": config.get("environment") or "local",
             "api_base": "/api",
             "database": database_public,
@@ -266,7 +266,7 @@ class MonitorService:
         }
 
     def _dependencies(self, db: dict[str, Any], ai: dict[str, Any]) -> list[dict[str, Any]]:
-        now = datetime.utcnow().isoformat(timespec="seconds")
+        now = _format_utc(datetime.utcnow())
         rows = [
             {"component": "后端服务", "status": "正常", "latency_ms": 0, "error": "", "checked_at": now},
             {"component": f"数据库 ({db['type']})", "status": "正常" if db["connected"] else "异常", "latency_ms": db["latency_ms"], "error": db["error"], "checked_at": now},
@@ -353,7 +353,7 @@ class MonitorService:
                 "path": _normalize_path(item.path),
                 "status_code": item.status_code,
                 "error": item.error or _status_text(item.status_code),
-                "created_at": item.created_at.isoformat(timespec="seconds"),
+                "created_at": _format_utc(item.created_at),
             }
             for item in list(REQUEST_METRICS)
             if item.status_code >= 400
@@ -377,7 +377,7 @@ class MonitorService:
             "latest_warning": warnings[-1].warning if warnings else "",
             "fallback_reasons": [{"reason": reason, "count": count} for reason, count in reasons.most_common()],
             "warnings": [
-                {"message": item.warning, "created_at": item.created_at.isoformat(timespec="seconds")}
+                {"message": item.warning, "created_at": _format_utc(item.created_at)}
                 for item in list(warnings)[-10:][::-1]
             ],
         }
@@ -407,7 +407,7 @@ class MonitorService:
                 {
                     "title": _attr(record, "title") or "未命名复盘",
                     "type": _attr(record, "type") or "event",
-                    "created_at": (_datetime_value(_attr(record, "created_at")) or datetime.utcnow()).isoformat(timespec="seconds"),
+                    "created_at": _format_monitor_datetime(_datetime_value(_attr(record, "created_at")) or datetime.utcnow()),
                 }
                 for record in recent_records
             ],
@@ -423,8 +423,16 @@ def _user_payload(user: Any) -> dict[str, Any]:
     return {
         "id": _attr(user, "id") or "",
         "username": _attr(user, "username") or "",
-        "created_at": created_at.isoformat(timespec="seconds") if created_at else "",
+        "created_at": _format_utc(created_at) if created_at else "",
     }
+
+
+def _format_utc(value: datetime) -> str:
+    return value.replace(microsecond=0).isoformat() + "Z"
+
+
+def _format_monitor_datetime(value: datetime) -> str:
+    return value.replace(microsecond=0).isoformat()
 
 
 def _date_value(value: Any) -> date | None:
