@@ -451,23 +451,35 @@ button {
 }
 
 .refresh-button {
+  width: auto;
   height: 39px;
-  padding: 0 18px;
+  min-width: 118px;
+  max-width: 150px;
+  padding: 0 14px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   white-space: nowrap;
+  overflow: hidden;
+  line-height: 1;
 }
 
 .refresh-button svg {
-  width: 17px;
-  height: 17px;
+  width: 17px !important;
+  height: 17px !important;
+  max-width: 17px !important;
+  max-height: 17px !important;
+  min-width: 17px;
+  min-height: 17px;
   flex: 0 0 auto;
+  display: block;
+  stroke-width: 1.8;
 }
 
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: clamp(10px, 1vw, 16px);
   margin-bottom: clamp(10px, 1vw, 16px);
 }
