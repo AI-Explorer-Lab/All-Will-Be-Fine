@@ -57,6 +57,10 @@ const state = {
   authUser: safeJsonParse(localStorage.getItem(AUTH_USER_KEY), null),
   authMode: "login",
   authSubmitting: false,
+  authDraft: {
+    username: "",
+    password: "",
+  },
   calendarMonth: localDateKey().slice(0, 7),
   calendarExpanded: false,
   notificationsOpen: false,
@@ -201,6 +205,8 @@ async function submitAuthForm(form = app.querySelector("[data-auth-form]")) {
   if (!form || state.authSubmitting) return;
   const username = form.querySelector("[data-auth-username]").value.trim();
   const password = form.querySelector("[data-auth-password]").value;
+  state.authDraft.username = username;
+  state.authDraft.password = password;
   if (!username || !password) {
     notify("请输入账号和密码");
     return;
@@ -216,6 +222,7 @@ async function submitAuthForm(form = app.querySelector("[data-auth-form]")) {
     });
     await storeBrowserCredential(form);
     setAuthSession(data);
+    state.authDraft.password = "";
     setState({ authSubmitting: false, apiOnline: true, route: "home", tab: "review" });
     await hydrateFromBackend();
     notify(state.authMode === "register" ? "账号已创建" : "已登录");
@@ -1011,8 +1018,8 @@ function authPage() {
         <form class="auth-form" data-auth-form method="post" action="/api/auth/${isRegister ? "register" : "login"}" autocomplete="on">
           <h1>${isRegister ? "创建账号" : "登录账号"}</h1>
           <p>登录后才能使用复盘、方法库和校准功能。</p>
-          <label for="auth-username">账号<input id="auth-username" name="username" data-auth-username type="text" inputmode="text" autocomplete="username" autocapitalize="none" spellcheck="false" required placeholder="${isRegister ? "例如 zhangsan" : ""}" /></label>
-          <label for="auth-password">密码<input id="auth-password" name="password" data-auth-password type="password" autocomplete="${isRegister ? "new-password" : "current-password"}" required placeholder="${isRegister ? "至少 8 位，包含字母和数字" : ""}" /></label>
+          <label for="auth-username">账号<input id="auth-username" name="username" data-auth-username type="text" inputmode="text" autocomplete="username" autocapitalize="none" spellcheck="false" required value="${escapeHtml(state.authDraft.username)}" placeholder="${isRegister ? "例如 zhangsan" : ""}" /></label>
+          <label for="auth-password">密码<input id="auth-password" name="password" data-auth-password type="password" autocomplete="${isRegister ? "new-password" : "current-password"}" required value="${escapeHtml(state.authDraft.password)}" placeholder="${isRegister ? "至少 8 位，包含字母和数字" : ""}" /></label>
           <button class="primary-button auth-submit" type="submit" ${state.authSubmitting ? "disabled" : ""}>
             ${state.authSubmitting ? "处理中..." : isRegister ? "创建并登录" : "登录"}
           </button>
@@ -2372,6 +2379,14 @@ app.addEventListener("input", (event) => {
 
   if (event.target.matches("[data-draft-field]")) {
     state.draftFields[state.mode][event.target.dataset.draftField] = event.target.value;
+  }
+
+  if (event.target.matches("[data-auth-username]")) {
+    state.authDraft.username = event.target.value;
+  }
+
+  if (event.target.matches("[data-auth-password]")) {
+    state.authDraft.password = event.target.value;
   }
 
   if (event.target.matches("[data-search]")) {
