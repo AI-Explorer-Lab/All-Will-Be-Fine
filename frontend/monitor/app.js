@@ -489,8 +489,8 @@ function configTable(data) {
 
 function usersTable(users = []) {
   if (!users.length) return `<div class="empty-panel muted">暂无用户数据</div>`;
-  return `<table class="api-table users-table"><thead><tr><th>用户名</th><th>昵称</th><th>用户 ID</th><th>创建时间</th></tr></thead><tbody>
-    ${users.map((user) => `<tr><td>${user.username || "-"}</td><td>${user.nickname || "-"}</td><td>${user.id || "-"}</td><td>${user.created_at ? formatDateTime(parseMonitorDate(user.created_at)) : "-"}</td></tr>`).join("")}
+  return `<table class="api-table users-table"><thead><tr><th>用户名</th><th>用户 ID</th><th>创建时间</th></tr></thead><tbody>
+    ${users.map((user) => `<tr><td>${user.username || "-"}</td><td>${user.id || "-"}</td><td>${user.created_at ? formatDateTime(parseMonitorDate(user.created_at)) : "-"}</td></tr>`).join("")}
   </tbody></table>`;
 }
 

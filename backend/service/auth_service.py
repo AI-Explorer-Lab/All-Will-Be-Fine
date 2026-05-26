@@ -39,15 +39,14 @@ class AuthService:
     def register(self, payload: dict[str, Any]) -> AuthResult:
         username = _normalize_username(payload.get("username"))
         password = str(payload.get("password") or "")
-        nickname = str(payload.get("nickname") or username).strip()[:64] or username
         _validate_password(password)
 
         password_hash = hash_password(password)
         try:
-            user = self.mapper.create_user(username, password_hash, nickname)
+            user = self.mapper.create_user(username, password_hash)
         except ValueError:
             raise ConflictException("账号已存在")
-        return self._result_for_user(user.id, user.username or username, user.nickname)
+        return self._result_for_user(user.id, user.username or username)
 
     def login(self, payload: dict[str, Any]) -> AuthResult:
         username = _normalize_username(payload.get("username"))
@@ -55,7 +54,7 @@ class AuthService:
         user = self.mapper.get_by_username(username)
         if user is None or not user.password_hash or not verify_password(password, user.password_hash):
             raise AuthenticationException("账号或密码错误")
-        return self._result_for_user(user.id, user.username or username, user.nickname)
+        return self._result_for_user(user.id, user.username or username)
 
     def current_user_from_token(self, token: str) -> UserContext:
         payload = self.decode_token(token)
@@ -65,7 +64,7 @@ class AuthService:
         user = self.mapper.get_by_id(user_id)
         if user is None or not user.username:
             raise AuthenticationException("未登录或登录已过期")
-        return UserContext(user_id=user.id, nickname=user.nickname)
+        return UserContext(user_id=user.id, username=user.username or "")
 
     def decode_token(self, token: str) -> dict[str, Any]:
         try:
@@ -80,17 +79,16 @@ class AuthService:
             raise AuthenticationException("未登录或登录已过期")
         return payload
 
-    def _result_for_user(self, user_id: str, username: str, nickname: str) -> AuthResult:
-        user = UserContext(user_id=user_id, nickname=nickname)
-        token = self.create_token(user_id, username, nickname)
+    def _result_for_user(self, user_id: str, username: str) -> AuthResult:
+        user = UserContext(user_id=user_id, username=username)
+        token = self.create_token(user_id, username)
         return AuthResult(access_token=token, token_type="bearer", expires_in=TOKEN_TTL_SECONDS, user=user)
 
-    def create_token(self, user_id: str, username: str, nickname: str) -> str:
+    def create_token(self, user_id: str, username: str) -> str:
         now = int(time.time())
         payload = {
             "sub": user_id,
             "username": username,
-            "nickname": nickname,
             "iat": now,
             "exp": now + TOKEN_TTL_SECONDS,
         }

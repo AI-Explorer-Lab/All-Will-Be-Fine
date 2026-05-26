@@ -201,7 +201,6 @@ async function submitAuthForm(form = app.querySelector("[data-auth-form]")) {
   if (!form || state.authSubmitting) return;
   const username = form.querySelector("[data-auth-username]").value.trim();
   const password = form.querySelector("[data-auth-password]").value;
-  const nickname = form.querySelector("[data-auth-nickname]")?.value.trim() || username;
   if (!username || !password) {
     notify("请输入账号和密码");
     return;
@@ -213,7 +212,7 @@ async function submitAuthForm(form = app.querySelector("[data-auth-form]")) {
     const data = await request(`/auth/${state.authMode === "register" ? "register" : "login"}`, {
       method: "POST",
       auth: false,
-      body: JSON.stringify({ username, password, nickname }),
+      body: JSON.stringify({ username, password }),
     });
     await storeBrowserCredential(form);
     setAuthSession(data);
@@ -932,7 +931,7 @@ function parseEditableValue(value, originalValue) {
 }
 
 function shell(content) {
-  const nickname = state.authUser?.nickname || "已登录";
+  const username = state.authUser?.username || "已登录";
   const notifications = notificationItems();
   return `
     <aside class="sidebar">
@@ -964,7 +963,7 @@ function shell(content) {
           ${state.notificationsOpen ? notificationPanel(notifications) : ""}
         </div>
         <div class="profile-button" aria-label="当前用户">
-          <span class="avatar"></span><span class="profile-name">${escapeHtml(nickname)}</span><button class="down" data-logout type="button">退出</button>
+          <span class="avatar"></span><span class="profile-name">${escapeHtml(username)}</span><button class="down" data-logout type="button">退出</button>
         </div>
       </header>
       ${content}
@@ -1013,7 +1012,6 @@ function authPage() {
           <h1>${isRegister ? "创建账号" : "登录账号"}</h1>
           <p>登录后才能使用复盘、方法库和校准功能。</p>
           <label for="auth-username">账号<input id="auth-username" name="username" data-auth-username type="text" inputmode="text" autocomplete="username" autocapitalize="none" spellcheck="false" required placeholder="${isRegister ? "例如 zhangsan" : ""}" /></label>
-          ${isRegister ? `<label for="auth-nickname">昵称<input id="auth-nickname" name="nickname" data-auth-nickname type="text" autocomplete="name" placeholder="展示名称，可不填" /></label>` : ""}
           <label for="auth-password">密码<input id="auth-password" name="password" data-auth-password type="password" autocomplete="${isRegister ? "new-password" : "current-password"}" required placeholder="${isRegister ? "至少 8 位，包含字母和数字" : ""}" /></label>
           <button class="primary-button auth-submit" type="submit" ${state.authSubmitting ? "disabled" : ""}>
             ${state.authSubmitting ? "处理中..." : isRegister ? "创建并登录" : "登录"}

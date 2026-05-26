@@ -10,7 +10,7 @@ ReviewType = Literal["event", "anxiety"]
 @dataclass
 class UserContext:
     user_id: str
-    nickname: str = "me"
+    username: str = ""
 
 
 @dataclass

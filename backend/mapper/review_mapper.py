@@ -240,7 +240,7 @@ class PostgresReviewMapper:
     @staticmethod
     def _ensure_user(session: Any, user_id: str) -> None:
         if session.get(UserEntity, user_id) is None:
-            session.add(UserEntity(id=user_id, nickname="me"))
+            session.add(UserEntity(id=user_id))
             session.flush()
 
     def _ensure_seeded(self, session: Any, user_id: str) -> None:

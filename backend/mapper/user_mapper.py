@@ -17,8 +17,8 @@ class UserMapper:
         else:
             self._impl = MemoryUserMapper()
 
-    def create_user(self, username: str, password_hash: str, nickname: str) -> UserEntity:
-        return self._impl.create_user(username, password_hash, nickname)
+    def create_user(self, username: str, password_hash: str) -> UserEntity:
+        return self._impl.create_user(username, password_hash)
 
     def get_by_username(self, username: str) -> UserEntity | None:
         return self._impl.get_by_username(username)
@@ -31,7 +31,7 @@ class MemoryUserMapper:
     _users_by_id: dict[str, UserEntity] = {}
     _ids_by_username: dict[str, str] = {}
 
-    def create_user(self, username: str, password_hash: str, nickname: str) -> UserEntity:
+    def create_user(self, username: str, password_hash: str) -> UserEntity:
         if username in self._ids_by_username:
             raise ValueError("username already exists")
         now = datetime.utcnow().replace(microsecond=0)
@@ -39,7 +39,6 @@ class MemoryUserMapper:
             id=f"user-{uuid4().hex}",
             username=username,
             password_hash=password_hash,
-            nickname=nickname,
             created_at=now,
             updated_at=now,
         )
@@ -60,7 +59,7 @@ class PostgresUserMapper:
         init_database()
         self.session_factory = session_factory or create_session_factory()
 
-    def create_user(self, username: str, password_hash: str, nickname: str) -> UserEntity:
+    def create_user(self, username: str, password_hash: str) -> UserEntity:
         with self.session_factory() as session:
             if self._get_by_username(session, username) is not None:
                 raise ValueError("username already exists")
@@ -68,7 +67,6 @@ class PostgresUserMapper:
                 id=f"user-{uuid4().hex}",
                 username=username,
                 password_hash=password_hash,
-                nickname=nickname,
             )
             session.add(user)
             session.commit()
@@ -95,7 +93,6 @@ def _detached_user(user: UserEntity) -> UserEntity:
         id=user.id,
         username=user.username,
         password_hash=user.password_hash,
-        nickname=user.nickname,
         created_at=user.created_at,
         updated_at=user.updated_at,
     )

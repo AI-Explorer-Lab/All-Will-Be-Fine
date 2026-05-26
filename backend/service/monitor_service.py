@@ -423,7 +423,6 @@ def _user_payload(user: Any) -> dict[str, Any]:
     return {
         "id": _attr(user, "id") or "",
         "username": _attr(user, "username") or "",
-        "nickname": _attr(user, "nickname") or "",
         "created_at": created_at.isoformat(timespec="seconds") if created_at else "",
     }
 

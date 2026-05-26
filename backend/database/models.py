@@ -20,7 +20,6 @@ class UserEntity(Base):
     id = Column(String(64), primary_key=True)
     username = Column(String(128), nullable=True, unique=True, index=True)
     password_hash = Column(Text, nullable=True)
-    nickname = Column(String(128), nullable=False, default="me")
     created_at = Column(DateTime, nullable=False, default=utc_now)
     updated_at = Column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
 

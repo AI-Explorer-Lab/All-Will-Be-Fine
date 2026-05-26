@@ -25,7 +25,7 @@ class AuthApiBoundaryTest(unittest.TestCase):
 
     def _register(self, username: str):
         response = auth_controller.register(
-            {"username": username, "password": "Passw0rd123", "nickname": username}
+            {"username": username, "password": "Passw0rd123"}
         )
         self.assertTrue(response["success"])
         self.assertNotIn("password", str(response["data"]).lower())

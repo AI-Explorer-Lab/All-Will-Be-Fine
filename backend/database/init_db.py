@@ -23,6 +23,8 @@ def _ensure_user_auth_columns(engine) -> None:
         statements.append("ALTER TABLE users ADD COLUMN username VARCHAR(128)")
     if "password_hash" not in columns:
         statements.append("ALTER TABLE users ADD COLUMN password_hash TEXT")
+    if "nickname" in columns:
+        statements.append("ALTER TABLE users DROP COLUMN nickname")
 
     with engine.begin() as connection:
         for statement in statements:
