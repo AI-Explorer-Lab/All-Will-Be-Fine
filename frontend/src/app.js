@@ -10,6 +10,7 @@ const {
 const API_BASE = localStorage.getItem("review_api_base") || defaultApiBase();
 const AUTH_TOKEN_KEY = "review_auth_token";
 const AUTH_USER_KEY = "review_auth_user";
+const THEME_KEY = "review_theme";
 const app = document.querySelector("#app");
 
 const store = {
@@ -64,6 +65,7 @@ const state = {
   calendarMonth: localDateKey().slice(0, 7),
   calendarExpanded: false,
   notificationsOpen: false,
+  theme: localStorage.getItem(THEME_KEY) || "system",
 };
 
 const navItems = [
@@ -82,7 +84,28 @@ const icons = {
   bell: `<svg viewBox="0 0 24 24"><path d="M18 10.4a6 6 0 0 0-12 0v4.1l-1.8 2h15.6l-1.8-2zM9.8 19.5h4.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   chevron: `<svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   back: `<svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  moon: `<svg viewBox="0 0 24 24"><path d="M19.4 15.1A7.4 7.4 0 0 1 8.9 4.6a7.8 7.8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`,
+  sun: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.8" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 3.6v2M12 18.4v2M4.5 4.5l1.4 1.4M18.1 18.1l1.4 1.4M3.6 12h2M18.4 12h2M4.5 19.5l1.4-1.4M18.1 5.9l1.4-1.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
 };
+
+function resolvedTheme() {
+  if (state.theme === "system") {
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  return state.theme;
+}
+
+function applyTheme() {
+  document.documentElement.dataset.theme = resolvedTheme();
+}
+
+function cycleTheme() {
+  const nextTheme = resolvedTheme() === "dark" ? "light" : "dark";
+  state.theme = nextTheme;
+  localStorage.setItem(THEME_KEY, nextTheme);
+  applyTheme();
+  render();
+}
 
 function defaultApiBase() {
   const { hostname, port, origin } = window.location;
@@ -940,6 +963,7 @@ function parseEditableValue(value, originalValue) {
 function shell(content) {
   const username = state.authUser?.username || "已登录";
   const notifications = notificationItems();
+  const theme = resolvedTheme();
   return `
     <aside class="sidebar">
       <div class="brand">${leafLogo()}<div><div class="brand-name">复盘</div><div class="brand-subtitle">下一次会更好</div></div></div>
@@ -963,6 +987,9 @@ function shell(content) {
           <input data-search value="${escapeHtml(state.query)}" placeholder="搜索复盘记录、方法卡片..." />
           <button type="button" data-search-submit aria-label="搜索">${icons.search}</button>
         </label>
+        <button class="header-icon theme-toggle" data-theme-toggle type="button" aria-label="${theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}" title="${theme === "dark" ? "浅色模式" : "深色模式"}">
+          ${theme === "dark" ? icons.sun : icons.moon}
+        </button>
         <div class="notification-wrap">
           <button class="header-icon" data-notifications aria-label="通知" aria-expanded="${state.notificationsOpen}">
             ${icons.bell}${notifications.length ? `<i></i>` : ""}
@@ -1011,9 +1038,13 @@ function notificationPanel(items) {
 
 function authPage() {
   const isRegister = state.authMode === "register";
+  const theme = resolvedTheme();
   return `
     <section class="auth-page">
       <div class="auth-panel">
+        <button class="header-icon theme-toggle auth-theme-toggle" data-theme-toggle type="button" aria-label="${theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}" title="${theme === "dark" ? "浅色模式" : "深色模式"}">
+          ${theme === "dark" ? icons.sun : icons.moon}
+        </button>
         <div class="brand auth-brand">${leafLogo()}<div><div class="brand-name">复盘</div></div></div>
         <form class="auth-form" data-auth-form method="post" action="/api/auth/${isRegister ? "register" : "login"}" autocomplete="on">
           <h1>${isRegister ? "创建账号" : "登录账号"}</h1>
@@ -1785,15 +1816,15 @@ function ensureRuntimeStyles() {
       z-index: 999 !important;
       width: 286px !important;
       padding: 14px !important;
-      border: 1px solid oklch(0.874 0.026 76) !important;
+      border: 1px solid var(--line) !important;
       border-radius: 8px !important;
-      background: #fffbf6 !important;
-      box-shadow: 0 14px 36px oklch(0.34 0.044 55 / 0.09) !important;
-      color: oklch(0.214 0.025 58) !important;
+      background: var(--paper) !important;
+      box-shadow: var(--shadow-soft) !important;
+      color: var(--ink) !important;
       text-align: left !important;
     }
     .notification-title { margin: 0 0 10px !important; font-size: 16px !important; font-weight: 800 !important; line-height: 1.4 !important; }
-    .notification-panel p { margin: 0 !important; color: oklch(0.482 0.035 62) !important; font-size: 13px !important; line-height: 1.6 !important; }
+    .notification-panel p { margin: 0 !important; color: var(--muted) !important; font-size: 13px !important; line-height: 1.6 !important; }
     .notification-item {
       width: 100% !important;
       display: grid !important;
@@ -1804,9 +1835,9 @@ function ensureRuntimeStyles() {
       color: inherit !important;
       text-align: left !important;
     }
-    .notification-item:hover, .notification-item:focus-visible { background: oklch(0.944 0.043 58) !important; }
+    .notification-item:hover, .notification-item:focus-visible { background: var(--orange-soft) !important; }
     .notification-item strong { font-size: 14px !important; line-height: 1.4 !important; }
-    .notification-item span, .notification-item small { color: oklch(0.482 0.035 62) !important; font-size: 12px !important; line-height: 1.5 !important; }
+    .notification-item span, .notification-item small { color: var(--muted) !important; font-size: 12px !important; line-height: 1.5 !important; }
   `;
   document.head.appendChild(style);
 }
@@ -2097,6 +2128,11 @@ app.addEventListener("click", async (event) => {
 
   if (target.dataset.authMode) {
     setState({ authMode: target.dataset.authMode });
+    return;
+  }
+
+  if (target.dataset.themeToggle !== undefined) {
+    cycleTheme();
     return;
   }
 
@@ -2392,6 +2428,14 @@ app.addEventListener("compositionend", (event) => {
   if (event.target.matches("[data-search]")) {
     state.searchComposing = false;
     state.query = event.target.value;
+    render();
+  }
+});
+
+applyTheme();
+window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
+  if (state.theme === "system") {
+    applyTheme();
     render();
   }
 });
