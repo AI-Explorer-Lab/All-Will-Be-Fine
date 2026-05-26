@@ -573,23 +573,26 @@ app.addEventListener("submit", async (event) => {
 app.addEventListener("click", async (event) => {
   const target = event.target.closest("button");
   if (!target) return;
-  event.preventDefault();
   if (target.dataset.section) {
+    event.preventDefault();
     runtime.section = target.dataset.section;
     render();
     return;
   }
   if (target.dataset.reveal !== undefined) {
+    event.preventDefault();
     runtime.passwordVisible = !runtime.passwordVisible;
     render();
     return;
   }
   if (target.dataset.forgot !== undefined) {
+    event.preventDefault();
     runtime.error = "请联系管理员重置监控密码";
     render();
     return;
   }
   if (target.dataset.logout !== undefined) {
+    event.preventDefault();
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(TOKEN_KEY);
     runtime.loggedIn = false;
@@ -598,6 +601,7 @@ app.addEventListener("click", async (event) => {
     return;
   }
   if (target.dataset.refresh !== undefined) {
+    event.preventDefault();
     await refreshHealth();
     return;
   }
