@@ -103,6 +103,7 @@ let runtime = {
   section: "overview",
   error: "",
   passwordVisible: false,
+  composing: false,
 };
 
 function defaultApiBase() {
@@ -557,6 +558,10 @@ function formatRecordTime(value) {
 app.addEventListener("submit", async (event) => {
   const form = event.target.closest("[data-login-form]");
   if (!form) return;
+  if (runtime.composing) {
+    event.preventDefault();
+    return;
+  }
   event.preventDefault();
   const username = form.username.value.trim();
   const password = form.password.value;
@@ -614,6 +619,18 @@ app.addEventListener("click", async (event) => {
     await refreshHealth();
     return;
   }
+});
+
+app.addEventListener("keydown", (event) => {
+  if (event.isComposing || event.keyCode === 229) return;
+});
+
+app.addEventListener("compositionstart", (event) => {
+  if (event.target.closest?.("[data-login-form]")) runtime.composing = true;
+});
+
+app.addEventListener("compositionend", (event) => {
+  if (event.target.closest?.("[data-login-form]")) runtime.composing = false;
 });
 
 if (runtime.loggedIn) refreshHealth();

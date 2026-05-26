@@ -2337,6 +2337,8 @@ app.addEventListener("submit", async (event) => {
 });
 
 app.addEventListener("keydown", (event) => {
+  if (event.isComposing || event.keyCode === 229) return;
+
   const authForm = event.target.closest?.("[data-auth-form]");
   if (authForm && event.key === "Enter" && event.target.matches("input")) {
     event.preventDefault();
