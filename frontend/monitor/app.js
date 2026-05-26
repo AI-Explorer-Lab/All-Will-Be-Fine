@@ -23,15 +23,15 @@ const icons = {
 };
 
 const navItems = [
-  ["概览", icons.grid],
-  ["系统健康", icons.health],
-  ["业务概览", icons.shield],
-  ["趋势分析", icons.trend],
-  ["API 质量", icons.api],
-  ["AI 补全质量", icons.ai],
-  ["内容洞察", icons.content],
-  ["错误日志", icons.alert],
-  ["配置管理", icons.gear],
+  ["overview", "概览", icons.grid],
+  ["health", "系统健康", icons.health],
+  ["business", "业务概览", icons.shield],
+  ["trend", "趋势分析", icons.trend],
+  ["api", "API 质量", icons.api],
+  ["ai", "AI 补全质量", icons.ai],
+  ["content", "内容洞察", icons.content],
+  ["errors", "错误日志", icons.alert],
+  ["config", "配置管理", icons.gear],
 ];
 
 const sample = {
@@ -97,6 +97,7 @@ let runtime = {
   healthLatency: "-",
   lastRefresh: new Date(),
   summary: null,
+  section: "overview",
   error: "",
   passwordVisible: false,
 };
@@ -186,96 +187,156 @@ function loginView() {
 
 function dashboardView() {
   const data = runtime.summary || fallbackSummary();
-  const business = data.business;
-  const database = data.database;
-  const agent = data.agent;
-  const eventPercent = business.reviews ? Math.round((business.events / business.reviews) * 100) : 0;
-  const anxietyPercent = business.reviews ? 100 - eventPercent : 0;
   const ok = runtime.healthOk;
   const nowText = formatDateTime(runtime.lastRefresh);
+  const currentNav = navItems.find(([key]) => key === runtime.section) || navItems[0];
   return `<section class="dashboard">
     <aside class="sidebar">
       <div class="side-brand">${markSvg("mini-mark")}<strong>监控中心</strong></div>
-      <nav class="side-nav">${navItems.map(([label, svg], index) => `<button class="${index === 0 ? "active" : ""}" type="button">${svg}<span>${label}</span></button>`).join("")}</nav>
+      <nav class="side-nav">${navItems.map(([key, label, svg]) => `<button class="${runtime.section === key ? "active" : ""}" type="button" data-section="${key}">${svg}<span>${label}</span></button>`).join("")}</nav>
       <button class="logout-button" type="button" data-logout>${icons.logout}<span>退出登录</span></button>
     </aside>
     <section class="main">
       <header class="topbar">
-        <div class="title-row"><h1>系统监控中心</h1><span class="shield-ok">✓</span></div>
+        <div class="title-row"><h1>${currentNav[1]}</h1><span class="shield-ok">✓</span></div>
         <div class="top-meta">
           <span>最后刷新： ${nowText}</span>
           <span class="auto-pill">自动刷新中 (30s)</span>
           <button class="refresh-button" type="button" data-refresh>${icons.refresh} 立即刷新</button>
         </div>
       </header>
-      <section class="status-grid">
-        ${statusTile("后端健康", ok ? "正常" : runtime.health, ok ? "/health 可用" : "等待服务响应", ok ? "ok" : "warn", icons.health)}
-        ${statusTile("环境", data.environment || "local", data.environment === "local" ? "本地环境" : "线上环境", "", icons.gear)}
-        ${statusTile("数据库", database.type, database.connected ? "连接正常" : "连接异常", database.connected ? "" : "warn", icons.db)}
-        ${statusTile("大模型 Provider", agent.provider || "unknown", `模型：${agent.model || "unknown"}`, "", icons.ai, "blue")}
-        ${statusTile("API 基础地址", runtime.apiBase, "超时：60s", "", icons.api, "blue")}
-        ${statusTile("OPENAI_API_KEY", agent.api_key_configured ? "已配置" : "未配置", agent.api_key_configured ? "密钥已正确配置" : "将使用本地兜底", agent.api_key_configured ? "ok" : "warn", icons.key)}
-      </section>
-      <section class="dashboard-grid">
-        <div class="panel">
-          <h2>业务数据概览</h2>
-          <div class="business-overview">
-            <div class="metric-grid">
-              ${metric("用户数", business.users)}
-              ${metric("复盘记录总数", Number(business.reviews || 0).toLocaleString())}
-              ${metric("事件复盘数", business.events)}
-              ${metric("焦虑复盘数", business.anxiety)}
-              ${metric("方法卡数量", business.methods)}
-              ${metric("校准卡数量", business.calibrations)}
-              ${metric("待验证校准卡", business.pending_calibrations, "orange")}
-              ${metric("已验证校准卡", business.verified_calibrations, "green")}
-              ${metric("已软删除记录", business.deleted_reviews, "red")}
-            </div>
-            <div class="donut-wrap">
-              <div class="donut" style="background: conic-gradient(var(--blue) 0 ${eventPercent}%, var(--violet) ${eventPercent}% 100%)"></div>
-              <div class="donut-stat">
-                <div><div class="big-percent">${eventPercent}%</div><span class="muted">事件复盘</span></div>
-                <div><div class="big-percent" style="color: var(--red)">${anxietyPercent}%</div><span class="muted">焦虑复盘</span></div>
-                <div class="legend">
-                  <span><i class="swatch"></i>事件复盘 ${business.events} (${eventPercent}%)</span>
-                  <span><i class="swatch violet"></i>焦虑复盘 ${business.anxiety} (${anxietyPercent}%)</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="panel">
-          <div class="panel-head"><h2>依赖健康</h2><button class="panel-link">查看详情 〉</button></div>
-          ${healthTable(data.dependencies || [])}
-        </div>
-        <div class="panel">
-          <div class="panel-head"><h2>最近 20 条错误请求</h2><button class="panel-link">查看全部 〉</button></div>
-          ${errorList(data.recent_errors || [])}
-        </div>
-        <div class="panel">
-          <div class="panel-head"><h2>近 7 天趋势</h2><button class="panel-link">查看详情 〉</button></div>
-          ${trendChart(data.trend || [])}
-        </div>
-        <div class="panel">
-          <div class="panel-head"><h2>API 运行质量 <span class="muted">(Top 10 接口)</span></h2><button class="panel-link">查看全部 〉</button></div>
-          ${apiTable(data.api_quality || [])}
-        </div>
-        <div class="panel">
-          <div class="panel-head"><h2>待处理 / 最近记录</h2><button class="panel-link">查看全部 〉</button></div>
-          <div class="two-columns">${pendingList(data.pending)}${recordList(data.pending)}</div>
-        </div>
-        <div class="panel">
-          <div class="panel-head"><h2>AI 补全质量</h2><button class="panel-link">查看详情 〉</button></div>
-          ${aiQuality(data.ai_quality)}
-        </div>
-        <div class="panel">
-          <h2>内容运营 / 使用洞察</h2>
-          ${contentInsight(data.content, business)}
-        </div>
-      </section>
+      ${sectionView(data, ok)}
       <footer class="monitor-footer">监控中心 v1.0.0  |  仅供管理员使用  |  数据每 30 秒自动刷新</footer>
     </section>
   </section>`;
+}
+
+function sectionView(data, ok) {
+  const views = {
+    overview: () => overviewSection(data, ok),
+    health: () => healthSection(data, ok),
+    business: () => businessSection(data),
+    trend: () => trendSection(data),
+    api: () => apiSection(data),
+    ai: () => aiSection(data),
+    content: () => contentSection(data),
+    errors: () => errorsSection(data),
+    config: () => configSection(data),
+  };
+  return (views[runtime.section] || views.overview)();
+}
+
+function statusTiles(data, ok) {
+  const database = data.database;
+  const agent = data.agent;
+  return `<section class="status-grid">
+    ${statusTile("后端健康", ok ? "正常" : runtime.health, ok ? "/health 可用" : "等待服务响应", ok ? "ok" : "warn", icons.health)}
+    ${statusTile("环境", data.environment || "local", data.environment === "local" ? "本地环境" : "线上环境", "", icons.gear)}
+    ${statusTile("数据库", database.type, database.connected ? "连接正常" : "连接异常", database.connected ? "" : "warn", icons.db)}
+    ${statusTile("大模型 Provider", data.agent.provider || "unknown", `模型：${agent.model || "unknown"}`, "", icons.ai, "blue")}
+    ${statusTile("OPENAI_API_KEY", agent.api_key_configured ? "已配置" : "未配置", agent.api_key_configured ? "密钥已正确配置" : "将使用本地兜底", agent.api_key_configured ? "ok" : "warn", icons.key)}
+  </section>`;
+}
+
+function overviewSection(data, ok) {
+  return `${statusTiles(data, ok)}
+    <section class="dashboard-grid overview-grid">
+      <div class="panel wide-panel">
+        <div class="panel-head"><h2>业务数据概览</h2><button class="panel-link" data-section="business">查看详情 〉</button></div>
+        ${businessOverview(data.business)}
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>依赖健康</h2><button class="panel-link" data-section="health">查看详情 〉</button></div>
+        ${healthTable((data.dependencies || []).slice(0, 7))}
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>最近错误</h2><button class="panel-link" data-section="errors">查看全部 〉</button></div>
+        ${errorList((data.recent_errors || []).slice(0, 5))}
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>待处理 / 最近记录</h2><button class="panel-link" data-section="content">查看详情 〉</button></div>
+        <div class="two-columns">${pendingList(data.pending)}${recordList(data.pending)}</div>
+      </div>
+    </section>`;
+}
+
+function healthSection(data, ok) {
+  return `${statusTiles(data, ok)}
+    <section class="single-grid">
+      <div class="panel"><h2>依赖健康</h2>${healthTable(data.dependencies || [])}</div>
+    </section>`;
+}
+
+function businessSection(data) {
+  return `<section class="single-grid">
+    <div class="panel"><h2>业务数据概览</h2>${businessOverview(data.business)}</div>
+  </section>`;
+}
+
+function trendSection(data) {
+  return `<section class="single-grid">
+    <div class="panel tall-panel"><h2>近 7 天趋势</h2>${trendChart(data.trend || [])}</div>
+  </section>`;
+}
+
+function apiSection(data) {
+  return `<section class="single-grid">
+    <div class="panel"><h2>API 运行质量 <span class="muted">(Top 10 接口)</span></h2>${apiTable(data.api_quality || [])}</div>
+  </section>`;
+}
+
+function aiSection(data) {
+  return `<section class="single-grid">
+    <div class="panel"><h2>AI 补全质量</h2>${aiQuality(data.ai_quality)}</div>
+  </section>`;
+}
+
+function contentSection(data) {
+  return `<section class="dashboard-grid content-page-grid">
+    <div class="panel"><h2>内容运营 / 使用洞察</h2>${contentInsight(data.content, data.business)}</div>
+    <div class="panel"><h2>待处理 / 最近记录</h2><div class="two-columns">${pendingList(data.pending)}${recordList(data.pending)}</div></div>
+  </section>`;
+}
+
+function errorsSection(data) {
+  return `<section class="single-grid">
+    <div class="panel"><h2>最近 20 条错误请求</h2>${errorList(data.recent_errors || [])}</div>
+  </section>`;
+}
+
+function configSection(data) {
+  return `<section class="single-grid">
+    <div class="panel"><h2>配置管理</h2>${configTable(data)}</div>
+  </section>`;
+}
+
+function businessOverview(business) {
+  const eventPercent = business.reviews ? Math.round((business.events / business.reviews) * 100) : 0;
+  const anxietyPercent = business.reviews ? 100 - eventPercent : 0;
+  return `<div class="business-overview">
+    <div class="metric-grid">
+      ${metric("用户数", business.users)}
+      ${metric("复盘记录总数", Number(business.reviews || 0).toLocaleString())}
+      ${metric("事件复盘数", business.events)}
+      ${metric("焦虑复盘数", business.anxiety)}
+      ${metric("方法卡数量", business.methods)}
+      ${metric("校准卡数量", business.calibrations)}
+      ${metric("待验证校准卡", business.pending_calibrations, "orange")}
+      ${metric("已验证校准卡", business.verified_calibrations, "green")}
+      ${metric("已软删除记录", business.deleted_reviews, "red")}
+    </div>
+    <div class="donut-wrap">
+      <div class="donut" style="background: conic-gradient(var(--blue) 0 ${eventPercent}%, var(--violet) ${eventPercent}% 100%)"></div>
+      <div class="donut-stat">
+        <div><div class="big-percent">${eventPercent}%</div><span class="muted">事件复盘</span></div>
+        <div><div class="big-percent" style="color: var(--red)">${anxietyPercent}%</div><span class="muted">焦虑复盘</span></div>
+        <div class="legend">
+          <span><i class="swatch"></i>事件复盘 ${business.events} (${eventPercent}%)</span>
+          <span><i class="swatch violet"></i>焦虑复盘 ${business.anxiety} (${anxietyPercent}%)</span>
+        </div>
+      </div>
+    </div>
+  </div>`;
 }
 
 function statusTile(label, value, sub, tone, svg, iconTone = "") {
@@ -398,6 +459,19 @@ function contentInsight(content = fallbackSummary().content, business = fallback
   </div>`;
 }
 
+function configTable(data) {
+  const rows = [
+    ["环境", data.environment || "local"],
+    ["API 基础地址", runtime.apiBase],
+    ["数据库类型", data.database?.type || "-"],
+    ["数据库连接", data.database?.connected ? "正常" : "异常"],
+    ["大模型 Provider", data.agent?.provider || "-"],
+    ["大模型模型", data.agent?.model || "-"],
+    ["OPENAI_API_KEY", data.agent?.api_key_configured ? "已配置" : "未配置"],
+  ];
+  return `<table class="api-table config-table"><tbody>${rows.map(([label, value]) => `<tr><th>${label}</th><td>${value}</td></tr>`).join("")}</tbody></table>`;
+}
+
 function pendingList(pending = fallbackSummary().pending) {
   const rows = pending?.overdue_calibrations?.length ? pending.overdue_calibrations : [{ title: "暂无逾期校准卡", days: 0 }];
   return `<div class="subpanel"><h3>逾期未验证校准卡（超 7 天）</h3><div class="pending-list">${rows.map((item) => `<div class="pending-item"><span>${item.title}</span><span></span><strong class="bad-text">${item.days ? `逾期 ${item.days} 天` : "-"}</strong></div>`).join("")}</div></div>`;
@@ -487,6 +561,10 @@ app.addEventListener("click", async (event) => {
   }
   if (target.dataset.refresh !== undefined) {
     await refreshHealth();
+  }
+  if (target.dataset.section) {
+    runtime.section = target.dataset.section;
+    render();
   }
 });
 
