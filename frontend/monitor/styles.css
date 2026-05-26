@@ -962,7 +962,7 @@ button {
 }
 
 .record-item-detailed {
-  grid-template-columns: minmax(180px, 1fr) minmax(210px, auto);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 206px);
   align-items: start;
 }
 
@@ -970,6 +970,16 @@ button {
 .record-time-stack {
   display: grid;
   gap: 4px;
+  min-width: 0;
+}
+
+.record-title-stack {
+  overflow: hidden;
+}
+
+.record-title {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .record-subtitle,
@@ -981,14 +991,16 @@ button {
 
 .record-time-stack {
   text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .record-meta {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  justify-content: flex-end;
-  white-space: nowrap;
+  gap: 8px;
+  justify-self: stretch;
+  min-width: 0;
 }
 
 .error-item > *,
@@ -1133,13 +1145,17 @@ button {
 }
 
 .record-kind {
-  padding: 3px 9px;
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  min-height: 24px;
+  padding: 0;
   border-radius: 4px;
   background: oklch(34% 0.12 260 / 0.68);
   color: oklch(84% 0.1 260);
   font-size: 12px;
-  min-width: 42px;
   text-align: center;
+  line-height: 1;
 }
 
 .record-kind.anxiety {
@@ -1303,5 +1319,17 @@ button {
   .health-table,
   .api-table {
     font-size: 12px;
+  }
+
+  .record-item-detailed {
+    grid-template-columns: 1fr;
+  }
+
+  .record-meta {
+    justify-self: start;
+  }
+
+  .record-time-stack {
+    text-align: left;
   }
 }
