@@ -503,7 +503,7 @@ function recordList(pending = fallbackSummary().pending) {
   const rows = pending?.recent_records?.length ? pending.recent_records : [{ title: "暂无复盘记录", type: "event", created_at: "" }];
   return `<div class="subpanel"><h3>最近创建的复盘记录</h3><div class="record-list">${rows.map((item) => {
     const kind = item.type === "anxiety" ? "焦虑" : "事件";
-    return `<div class="record-item"><span class="record-title">${item.title}</span><span class="record-meta"><span class="record-kind ${kind === "焦虑" ? "anxiety" : ""}">${kind}</span><span class="muted">${item.created_at ? formatTime(parseMonitorDate(item.created_at)) : "-"}</span></span></div>`;
+    return `<div class="record-item"><span class="record-title">${item.title}</span><span class="record-meta"><span class="record-kind ${kind === "焦虑" ? "anxiety" : ""}">${kind}</span><span class="muted">${formatRecordTime(item.created_at)}</span></span></div>`;
   }).join("")}</div></div>`;
 }
 
@@ -541,8 +541,17 @@ function formatDateTime(date) {
 function parseMonitorDate(value) {
   if (value instanceof Date) return value;
   if (typeof value !== "string" || !value) return new Date();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}T00:00:00+08:00`);
+  }
   const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value);
-  return new Date(hasZone ? value : `${value}Z`);
+  return new Date(hasZone ? value : `${value}+08:00`);
+}
+
+function formatRecordTime(value) {
+  if (!value) return "-";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value.slice(5);
+  return formatTime(parseMonitorDate(value));
 }
 
 app.addEventListener("submit", async (event) => {

@@ -329,6 +329,7 @@ function normalizeRecord(record) {
     scene: record.scene || "其他",
     title: record.title || (type === "event" ? "新的事件复盘" : "新的焦虑复盘"),
     date: createdAt,
+    createdAt,
     shortDate: displayDate(createdAt),
     rawInput: record.raw_input || record.rawInput || "",
     summary: record.summary || {},
@@ -447,8 +448,8 @@ function recordPayload(record) {
     summary: record.summary,
     result_card: record.resultCard,
     note: record.note || "",
-    created_at: record.date,
-    updated_at: localDateKey(),
+    created_at: record.createdAt || record.date || localDateTimeKey(),
+    updated_at: localDateTimeKey(),
     saved_to_method_library: Boolean(record.savedToMethodLibrary),
     saved_to_calibration: Boolean(record.savedToCalibration),
   };
@@ -463,8 +464,8 @@ function methodPayload(card) {
     trigger: card.trigger || "",
     steps: card.steps || [],
     reminder: card.reminder || "",
-    created_at: card.createdAt || localDateKey(),
-    updated_at: localDateKey(),
+    created_at: card.createdAt || localDateTimeKey(),
+    updated_at: localDateTimeKey(),
   };
 }
 
@@ -496,8 +497,8 @@ function bundlePayload(bundle) {
       summary: bundle.record.summary,
       result_card: bundle.record.resultCard,
       note: bundle.record.note || "",
-      created_at: bundle.record.date,
-      updated_at: localDateKey(),
+      created_at: bundle.record.createdAt || bundle.record.date || localDateTimeKey(),
+      updated_at: localDateTimeKey(),
       saved_to_method_library: includeMethod,
       saved_to_calibration: includeCalibration,
     },
@@ -509,8 +510,8 @@ function bundlePayload(bundle) {
       trigger: bundle.methodCard.trigger,
       steps: bundle.methodCard.steps,
       reminder: bundle.methodCard.reminder || "",
-      created_at: bundle.methodCard.createdAt || bundle.record.date,
-      updated_at: localDateKey(),
+      created_at: bundle.methodCard.createdAt || bundle.record.createdAt || bundle.record.date || localDateTimeKey(),
+      updated_at: localDateTimeKey(),
     } : null,
     calibration_card: includeCalibration && bundle.calibrationCard ? {
       id: bundle.calibrationCard.id,
@@ -580,6 +581,13 @@ function localDateKey(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function localDateTimeKey(date = new Date()) {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return `${localDateKey(date)}T${hours}:${minutes}:${seconds}`;
 }
 
 function addDays(date, amount) {
@@ -709,6 +717,7 @@ function composeDraftInput() {
 
 function buildLocalBundle(rawInput, mode, scene) {
   const today = localDateKey();
+  const now = localDateTimeKey();
   const eventSteps = ["复述我对事情的理解", "确认目标和边界", "列出关键不确定点", "明确完成标准"];
   const eventReminder = "开始做之前，先确认清楚，返工和内耗的成本更高。";
   const anxietyAction = ["写下一个 30 分钟内能完成的小动作", "确认完成标准", "完成后再回来看这张卡"];
@@ -738,7 +747,7 @@ function buildLocalBundle(rawInput, mode, scene) {
       我能做什么: anxietyAction,
       提醒自己: anxietyReminder,
     },
-    createdAt: today,
+    createdAt: now,
     savedToMethodLibrary: mode === "event",
     savedToCalibration: mode === "anxiety",
   });
@@ -751,7 +760,8 @@ function buildLocalBundle(rawInput, mode, scene) {
       trigger: "准备开始处理类似事情前",
       steps: eventSteps,
       source: record.title,
-      updatedAt: today,
+      createdAt: now,
+      updatedAt: now,
     }) : null,
     calibrationCard: mode === "anxiety" ? normalizeCalibration({
       id: `local-calibration-${Date.now()}`,
@@ -837,7 +847,8 @@ function createMethodFromRecord(record) {
     trigger: record.summary?.需要改进的地方 || "再次遇到类似情况前",
     steps: Array.isArray(steps) && steps.length ? steps : ["复述当前情况", "确认目标和边界", "列出下一步行动"],
     source: record.title,
-    updatedAt: localDateKey(),
+    createdAt: localDateTimeKey(),
+    updatedAt: localDateTimeKey(),
   });
   upsertMethod(method);
   return method;
@@ -1878,7 +1889,7 @@ async function saveMethodCard(id) {
     scenes: [scene],
     trigger: trigger || card.trigger,
     steps: steps.length ? steps : card.steps,
-    updatedAt: localDateKey(),
+    updatedAt: localDateTimeKey(),
   });
   try {
     const saved = await request(`/methods/${id}`, {
@@ -1918,7 +1929,7 @@ async function saveRecord(id) {
   record.scene = scene;
   record.rawInput = rawInput;
   record.note = note;
-  record.updatedAt = localDateKey();
+  record.updatedAt = localDateTimeKey();
 
   editor.querySelectorAll("[data-record-field]").forEach((field) => {
     const section = field.dataset.section;
