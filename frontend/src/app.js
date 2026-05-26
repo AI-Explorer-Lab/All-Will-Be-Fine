@@ -1045,26 +1045,7 @@ function leafLogo() {
 }
 
 function deskPlantArt(size = "hero") {
-  return `
-    <svg class="desk-art ${size}" viewBox="0 0 360 240" aria-hidden="true">
-      <path d="M6 206c85 30 234 28 337 1" fill="none" stroke="#edcfad" stroke-width="2" opacity=".55"/>
-      <path d="M268 180c-5-54-1-95 14-129" fill="none" stroke="#96824e" stroke-width="3" stroke-linecap="round"/>
-      ${Array.from({ length: 24 }).map((_, i) => {
-        const x = 252 + (i % 4) * 17 + (i > 11 ? 18 : 0);
-        const y = 62 + Math.floor(i / 4) * 18;
-        const rot = i % 2 ? -32 : 28;
-        return `<ellipse cx="${x}" cy="${y}" rx="8" ry="15" transform="rotate(${rot} ${x} ${y})" fill="#c8b26c" opacity=".78"/>`;
-      }).join("")}
-      <path d="M244 156h72l-8 60h-56z" fill="#f1e5d2" stroke="#c9a87d" stroke-width="2"/>
-      <path d="M84 172c48-14 90-11 134 8v31c-44-18-86-22-134-8z" fill="#fff2df" stroke="#c9a87d" stroke-width="2"/>
-      <path d="M218 180c32-16 62-18 92-6v30c-28-11-58-9-92 7z" fill="#f9ead8" stroke="#c9a87d" stroke-width="2"/>
-      <ellipse cx="126" cy="129" rx="32" ry="11" fill="#f9c48b" stroke="#cf8d55" stroke-width="2"/>
-      <path d="M94 129v56c0 8 14 15 32 15s32-7 32-15v-56" fill="#f3ae73" opacity=".55" stroke="#cf8d55" stroke-width="2"/>
-      <path d="M126 116c8 13-2 23-6 26-6-8-2-18 6-26z" fill="#e97532"/>
-      <path d="M244 182l60 16" stroke="#67432b" stroke-width="8" stroke-linecap="round"/>
-      <path d="M243 179l61 16" stroke="#d9b187" stroke-width="4" stroke-linecap="round"/>
-    </svg>
-  `;
+  return `<img class="desk-art ${size}" src="./assets/reflective-desk.png" alt="" aria-hidden="true" loading="lazy" decoding="async" />`;
 }
 
 function quoteArt() {
