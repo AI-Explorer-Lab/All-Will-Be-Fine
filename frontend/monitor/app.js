@@ -26,6 +26,7 @@ const navItems = [
   ["overview", "概览", icons.grid],
   ["health", "系统健康", icons.health],
   ["business", "业务概览", icons.shield],
+  ["users", "用户列表", icons.user],
   ["trend", "趋势分析", icons.trend],
   ["api", "API 质量", icons.api],
   ["ai", "AI 补全质量", icons.ai],
@@ -86,6 +87,7 @@ function fallbackSummary() {
     ai_quality: { total: 0, success: 0, success_rate: 100, fallback: 0, avg_latency_ms: 0, fallback_reasons: [], warnings: [] },
     content: { top_scenes: [], method_rate: 0, calibration_rate: 0 },
     pending: { overdue_calibrations: [], overdue_count: 0, recent_records: [] },
+    users: [],
   };
 }
 
@@ -216,6 +218,7 @@ function sectionView(data, ok) {
     overview: () => overviewSection(data, ok),
     health: () => healthSection(data, ok),
     business: () => businessSection(data),
+    users: () => usersSection(data),
     trend: () => trendSection(data),
     api: () => apiSection(data),
     ai: () => aiSection(data),
@@ -243,7 +246,7 @@ function overviewSection(data, ok) {
     <section class="dashboard-grid overview-grid">
       <div class="panel wide-panel">
         <div class="panel-head"><h2>业务数据概览</h2><button class="panel-link" data-section="business">查看详情 〉</button></div>
-        ${businessOverview(data.business)}
+        ${businessOverview(data)}
       </div>
       <div class="panel">
         <div class="panel-head"><h2>依赖健康</h2><button class="panel-link" data-section="health">查看详情 〉</button></div>
@@ -269,7 +272,13 @@ function healthSection(data, ok) {
 
 function businessSection(data) {
   return `<section class="single-grid">
-    <div class="panel"><h2>业务数据概览</h2>${businessOverview(data.business)}</div>
+    <div class="panel"><h2>业务数据概览</h2>${businessOverview(data)}</div>
+  </section>`;
+}
+
+function usersSection(data) {
+  return `<section class="single-grid">
+    <div class="panel"><h2>用户列表</h2>${usersTable(data.users || [])}</div>
   </section>`;
 }
 
@@ -310,12 +319,13 @@ function configSection(data) {
   </section>`;
 }
 
-function businessOverview(business) {
+function businessOverview(data) {
+  const business = data.business || data;
   const eventPercent = business.reviews ? Math.round((business.events / business.reviews) * 100) : 0;
   const anxietyPercent = business.reviews ? 100 - eventPercent : 0;
   return `<div class="business-overview">
     <div class="metric-grid">
-      ${metric("用户数", business.users)}
+      ${metric("用户数", business.users, "", "users")}
       ${metric("复盘记录总数", Number(business.reviews || 0).toLocaleString())}
       ${metric("事件复盘数", business.events)}
       ${metric("焦虑复盘数", business.anxiety)}
@@ -325,15 +335,15 @@ function businessOverview(business) {
       ${metric("已验证校准卡", business.verified_calibrations, "green")}
       ${metric("已软删除记录", business.deleted_reviews, "red")}
     </div>
-    <div class="donut-wrap">
-      <div class="donut" style="background: conic-gradient(var(--blue) 0 ${eventPercent}%, var(--violet) ${eventPercent}% 100%)"></div>
-      <div class="donut-stat">
-        <div><div class="big-percent">${eventPercent}%</div><span class="muted">事件复盘</span></div>
-        <div><div class="big-percent" style="color: var(--red)">${anxietyPercent}%</div><span class="muted">焦虑复盘</span></div>
-        <div class="legend">
-          <span><i class="swatch"></i>事件复盘 ${business.events} (${eventPercent}%)</span>
-          <span><i class="swatch violet"></i>焦虑复盘 ${business.anxiety} (${anxietyPercent}%)</span>
-        </div>
+    <div class="split-summary">
+      <h3>复盘类型分布</h3>
+      <div class="split-bar" aria-label="复盘类型分布">
+        <span class="event" style="width:${eventPercent}%"></span>
+        <span class="anxiety" style="width:${anxietyPercent}%"></span>
+      </div>
+      <div class="split-rows">
+        <div><span><i class="swatch"></i>事件复盘</span><strong class="event-text">${eventPercent}%</strong><small>${business.events} 条</small></div>
+        <div><span><i class="swatch violet"></i>焦虑复盘</span><strong class="anxiety-text">${anxietyPercent}%</strong><small>${business.anxiety} 条</small></div>
       </div>
     </div>
   </div>`;
@@ -348,8 +358,12 @@ function statusTile(label, value, sub, tone, svg, iconTone = "") {
   </article>`;
 }
 
-function metric(label, value, tone = "") {
-  return `<div class="metric-box"><div class="metric-label">${label}</div><div class="metric-value ${tone}">${value}</div></div>`;
+function metric(label, value, tone = "", section = "") {
+  const content = `<div class="metric-label">${label}</div><div class="metric-value ${tone}">${value}</div>`;
+  if (section) {
+    return `<button class="metric-box metric-button" type="button" data-section="${section}" aria-label="查看${label}详情">${content}</button>`;
+  }
+  return `<div class="metric-box">${content}</div>`;
 }
 
 function healthTable(rows = []) {
@@ -472,6 +486,13 @@ function configTable(data) {
   return `<table class="api-table config-table"><tbody>${rows.map(([label, value]) => `<tr><th>${label}</th><td>${value}</td></tr>`).join("")}</tbody></table>`;
 }
 
+function usersTable(users = []) {
+  if (!users.length) return `<div class="empty-panel muted">暂无用户数据</div>`;
+  return `<table class="api-table users-table"><thead><tr><th>用户名</th><th>昵称</th><th>用户 ID</th><th>创建时间</th></tr></thead><tbody>
+    ${users.map((user) => `<tr><td>${user.username || "-"}</td><td>${user.nickname || "-"}</td><td>${user.id || "-"}</td><td>${user.created_at ? formatDateTime(new Date(user.created_at)) : "-"}</td></tr>`).join("")}
+  </tbody></table>`;
+}
+
 function pendingList(pending = fallbackSummary().pending) {
   const rows = pending?.overdue_calibrations?.length ? pending.overdue_calibrations : [{ title: "暂无逾期校准卡", days: 0 }];
   return `<div class="subpanel"><h3>逾期未验证校准卡（超 7 天）</h3><div class="pending-list">${rows.map((item) => `<div class="pending-item"><span>${item.title}</span><span></span><strong class="bad-text">${item.days ? `逾期 ${item.days} 天` : "-"}</strong></div>`).join("")}</div></div>`;
@@ -481,7 +502,7 @@ function recordList(pending = fallbackSummary().pending) {
   const rows = pending?.recent_records?.length ? pending.recent_records : [{ title: "暂无复盘记录", type: "event", created_at: "" }];
   return `<div class="subpanel"><h3>最近创建的复盘记录</h3><div class="record-list">${rows.map((item) => {
     const kind = item.type === "anxiety" ? "焦虑" : "事件";
-    return `<div class="record-item"><span>${item.title}</span><span class="record-kind ${kind === "焦虑" ? "anxiety" : ""}">${kind}</span><span class="muted">${item.created_at ? formatTime(new Date(item.created_at)) : "-"}</span></div>`;
+    return `<div class="record-item"><span class="record-title">${item.title}</span><span class="record-meta"><span class="record-kind ${kind === "焦虑" ? "anxiety" : ""}">${kind}</span><span class="muted">${item.created_at ? formatTime(new Date(item.created_at)) : "-"}</span></span></div>`;
   }).join("")}</div></div>`;
 }
 

@@ -154,6 +154,7 @@ class MonitorService:
             "ai_quality": ai_snapshot,
             "content": self._content_snapshot(db),
             "pending": self._pending_snapshot(db),
+            "users": db.get("users", []),
         }
 
     def _database_snapshot(self) -> dict[str, Any]:
@@ -169,7 +170,7 @@ class MonitorService:
                 engine = session.get_bind()
                 inspector = inspect(engine)
                 tables = set(inspector.get_table_names())
-                users = session.query(UserEntity).count() if "users" in tables else 0
+                user_rows = session.query(UserEntity).order_by(UserEntity.created_at.desc()).all() if "users" in tables else []
                 reviews = session.query(ReviewEntity).filter(ReviewEntity.deleted_at.is_(None)).all() if "reviews" in tables else []
                 deleted = session.query(ReviewEntity).filter(ReviewEntity.deleted_at.is_not(None)).count() if "reviews" in tables else 0
                 methods = session.query(MethodCardEntity).all() if "method_cards" in tables else []
@@ -182,7 +183,7 @@ class MonitorService:
             connected=True,
             latency_ms=int((time.perf_counter() - started) * 1000),
             tables=tables,
-            users=users,
+            users=user_rows,
             reviews=reviews,
             deleted=deleted,
             methods=methods,
@@ -193,12 +194,13 @@ class MonitorService:
         reviews = [record for records in MemoryReviewMapper._reviews.values() for record in records.values()]
         methods = [card for cards in MemoryReviewMapper._methods.values() for card in cards.values()]
         calibrations = [card for cards in MemoryReviewMapper._calibrations.values() for card in cards.values()]
+        users = list(MemoryUserMapper._users_by_id.values())
         return self._snapshot_from_rows(
             db_type="memory",
             connected=True,
             latency_ms=0,
             tables={"users", "reviews", "method_cards", "calibration_cards"},
-            users=len(MemoryUserMapper._users_by_id),
+            users=users,
             reviews=reviews,
             deleted=0,
             methods=methods,
@@ -211,7 +213,7 @@ class MonitorService:
         connected: bool,
         latency_ms: int,
         tables: set[str],
-        users: int,
+        users: list[Any],
         reviews: list[Any],
         deleted: int,
         methods: list[Any],
@@ -227,9 +229,10 @@ class MonitorService:
             "latency_ms": latency_ms,
             "error": "",
             "tables": {table: table in tables for table in ["users", "reviews", "method_cards", "calibration_cards"]},
+            "users": [_user_payload(user) for user in users],
             "rows": {"reviews": reviews, "methods": methods, "calibrations": calibrations},
             "business": {
-                "users": users,
+                "users": len(users),
                 "reviews": len(reviews),
                 "events": event_count,
                 "anxiety": anxiety_count,
@@ -413,6 +416,16 @@ class MonitorService:
 
 def _attr(item: Any, name: str) -> Any:
     return getattr(item, name, None)
+
+
+def _user_payload(user: Any) -> dict[str, Any]:
+    created_at = _datetime_value(_attr(user, "created_at"))
+    return {
+        "id": _attr(user, "id") or "",
+        "username": _attr(user, "username") or "",
+        "nickname": _attr(user, "nickname") or "",
+        "created_at": created_at.isoformat(timespec="seconds") if created_at else "",
+    }
 
 
 def _date_value(value: Any) -> date | None:
