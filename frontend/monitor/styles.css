@@ -961,6 +961,28 @@ button {
   line-height: 1.45;
 }
 
+.record-item-detailed {
+  grid-template-columns: minmax(180px, 1fr) minmax(210px, auto);
+  align-items: start;
+}
+
+.record-title-stack,
+.record-time-stack {
+  display: grid;
+  gap: 4px;
+}
+
+.record-subtitle,
+.record-time-stack {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.record-time-stack {
+  text-align: right;
+}
+
 .record-meta {
   display: inline-flex;
   align-items: center;

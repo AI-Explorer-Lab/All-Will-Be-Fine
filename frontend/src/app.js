@@ -1393,7 +1393,7 @@ function displayValue(value) {
 }
 
 function recordsPage() {
-  const filters = ["全部", "焦虑", "工作", "学习", "面试", "人际", "决策", "健康", "未来", "生活", "其他"];
+  const filters = ["全部", "焦虑", "工作", "学习", "情感", "面试", "人际", "决策", "健康", "未来", "生活", "其他"];
   const filtered = store.records.filter((record) => matchesFilter(record, state.filter) && matchesQuery([record.title, record.scene, record.conclusion]));
   return shell(`<main class="content-page"><h1 class="list-title">我的记录</h1>${filterRow(filters)}<div class="card-list">${filtered.map(recordCard).join("") || emptyState("没有找到匹配的记录")}</div></main>`);
 }
@@ -1416,7 +1416,7 @@ function methodsPage() {
 }
 
 function calibrationPage() {
-  const filters = ["全部", "工作", "学习", "面试", "人际", "决策", "生活", "其他", "健康", "未来"];
+  const filters = ["全部", "工作", "学习", "情感", "面试", "人际", "决策", "生活", "其他", "健康", "未来"];
   const activeFilter = filters.includes(state.filter) ? state.filter : "全部";
   const cards = calibrationCardsForPage().filter((card) => (
     card.status === state.calibrationTab

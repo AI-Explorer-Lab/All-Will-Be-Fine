@@ -518,7 +518,17 @@ function recordList(pending = fallbackSummary().pending) {
   const rows = pending?.recent_records?.length ? pending.recent_records : [{ title: "暂无复盘记录", type: "event", created_at: "" }];
   return `<div class="subpanel"><h3>最近创建的复盘记录</h3><div class="record-list">${rows.map((item) => {
     const kind = item.type === "anxiety" ? "焦虑" : "事件";
-    return `<div class="record-item"><span class="record-title">${item.title}</span><span class="record-meta"><span class="record-kind ${kind === "焦虑" ? "anxiety" : ""}">${kind}</span><span class="muted">${formatRecordTime(item.created_at)}</span></span></div>`;
+    const user = item.username || item.user_id || "-";
+    return `<div class="record-item record-item-detailed">
+      <div class="record-title-stack">
+        <span class="record-title">${escapeHtml(item.title || "-")}</span>
+        <span class="record-subtitle">${escapeHtml(user)} · ${escapeHtml(item.scene || "其他")}</span>
+      </div>
+      <span class="record-meta">
+        <span class="record-kind ${kind === "焦虑" ? "anxiety" : ""}">${kind}</span>
+        <span class="record-time-stack"><span>创建 ${formatRecordDateTime(item.created_at)}</span><span>更新 ${formatRecordDateTime(item.updated_at || item.created_at)}</span></span>
+      </span>
+    </div>`;
   }).join("")}</div></div>`;
 }
 
@@ -567,6 +577,11 @@ function formatRecordTime(value) {
   if (!value) return "-";
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value.slice(5);
   return formatTime(parseMonitorDate(value));
+}
+
+function formatRecordDateTime(value) {
+  if (!value) return "-";
+  return formatDateTime(parseMonitorDate(value));
 }
 
 app.addEventListener("submit", async (event) => {

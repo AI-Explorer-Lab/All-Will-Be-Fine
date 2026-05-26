@@ -394,6 +394,7 @@ class MonitorService:
 
     def _pending_snapshot(self, db: dict[str, Any]) -> dict[str, Any]:
         today = date.today()
+        users_by_id = {user.get("id"): user.get("username") for user in db.get("users", []) if isinstance(user, dict)}
         overdue = []
         for card in db["rows"]["calibrations"]:
             verify_date = _date_value(_attr(card, "verification_date"))
@@ -407,7 +408,11 @@ class MonitorService:
                 {
                     "title": _attr(record, "title") or "未命名复盘",
                     "type": _attr(record, "type") or "event",
+                    "scene": _attr(record, "scene") or "其他",
+                    "user_id": _attr(record, "user_id") or "",
+                    "username": users_by_id.get(_attr(record, "user_id")) or "",
                     "created_at": _format_monitor_datetime(_datetime_value(_attr(record, "created_at")) or datetime.utcnow()),
+                    "updated_at": _format_monitor_datetime(_datetime_value(_attr(record, "updated_at")) or _datetime_value(_attr(record, "created_at")) or datetime.utcnow()),
                 }
                 for record in recent_records
             ],
