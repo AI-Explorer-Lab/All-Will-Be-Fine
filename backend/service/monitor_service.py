@@ -21,9 +21,16 @@ from backend.mapper.memory_review_mapper import MemoryReviewMapper
 from backend.mapper.user_mapper import MemoryUserMapper
 
 
+def _monitor_token_ttl_seconds() -> int:
+    try:
+        return max(60, int(os.getenv("MONITOR_TOKEN_TTL_SECONDS", str(7 * 24 * 60 * 60))))
+    except ValueError:
+        return 7 * 24 * 60 * 60
+
+
 MONITOR_ADMIN_USERNAME = "admin"
 MONITOR_ADMIN_PASSWORD_HASH = "57a110735735c4bd23c4f7c4c1dd7b048a247660e7f4337c7d4c581cf47dc2c9"
-MONITOR_TOKEN_TTL_SECONDS = 8 * 60 * 60
+MONITOR_TOKEN_TTL_SECONDS = _monitor_token_ttl_seconds()
 _DEFAULT_MONITOR_SECRET = "local-monitor-secret-change-me"
 
 
