@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base
 
@@ -75,3 +75,15 @@ class CalibrationCardEntity(Base):
     calibration_conclusion = Column(Text, nullable=False, default="")
     created_at = Column(DateTime, nullable=False, default=utc_now)
     updated_at = Column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
+
+
+class MonitorRequestMetricEntity(Base):
+    __tablename__ = "monitor_request_metrics"
+
+    id = Column(String(64), primary_key=True)
+    method = Column(String(16), nullable=False, index=True)
+    path = Column(String(512), nullable=False, index=True)
+    status_code = Column(Integer, nullable=False, index=True)
+    duration_ms = Column(Integer, nullable=False, default=0)
+    error = Column(Text, nullable=False, default="")
+    created_at = Column(DateTime, nullable=False, default=utc_now, index=True)

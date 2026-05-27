@@ -2074,6 +2074,12 @@ async function deleteResource(kind, id) {
 async function requestFollowUp(reviewId) {
   if (!reviewId) return;
   setState({ followUpLoading: true });
+  if (String(reviewId).startsWith("local-")) {
+    const fallback = buildLocalFollowUp(currentRecord());
+    setState({ followUp: fallback, followUpLoading: false, apiOnline: false });
+    notify("当前记录尚未同步到服务器，已使用本地追问继续");
+    return;
+  }
   try {
     const response = await request(`/reviews/${reviewId}/follow-up`, {
       method: "POST",

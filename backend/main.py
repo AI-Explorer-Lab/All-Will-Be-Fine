@@ -34,6 +34,7 @@ def create_app() -> FastAPI:
             raise
         finally:
             duration_ms = int((perf_counter() - started) * 1000)
+            error = getattr(request.state, "monitor_error", error)
             record_request_metric(request.method, request.url.path, status_code, duration_ms, error)
 
     app.include_router(auth_router, prefix="/api")

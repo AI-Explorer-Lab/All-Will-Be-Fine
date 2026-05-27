@@ -5,6 +5,7 @@ import hmac
 import json
 import os
 import time
+import uuid
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -14,7 +15,7 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.config.config import load_config
-from backend.database.models import CalibrationCardEntity, MethodCardEntity, ReviewEntity, UserEntity
+from backend.database.models import CalibrationCardEntity, MethodCardEntity, MonitorRequestMetricEntity, ReviewEntity, UserEntity
 from backend.database.session import create_session_factory, get_db_type
 from backend.exceptions.business_exception import AuthenticationException
 from backend.mapper.memory_review_mapper import MemoryReviewMapper
@@ -61,16 +62,65 @@ AI_METRICS: deque[AiMetric] = deque(maxlen=500)
 def record_request_metric(method: str, path: str, status_code: int, duration_ms: int, error: str = "") -> None:
     if path.startswith("/api/monitor"):
         return
-    REQUEST_METRICS.append(
-        RequestMetric(
-            method=method.upper(),
-            path=path,
-            status_code=status_code,
-            duration_ms=duration_ms,
-            error=error,
-            created_at=datetime.utcnow(),
-        )
+    metric = RequestMetric(
+        method=method.upper(),
+        path=path,
+        status_code=status_code,
+        duration_ms=duration_ms,
+        error=error,
+        created_at=datetime.utcnow(),
     )
+    REQUEST_METRICS.append(metric)
+    _persist_request_metric(metric)
+
+
+def _persist_request_metric(metric: RequestMetric) -> None:
+    if get_db_type() != "postgres":
+        return
+    try:
+        Session = create_session_factory()
+        with Session() as session:
+            session.add(
+                MonitorRequestMetricEntity(
+                    id=uuid.uuid4().hex,
+                    method=metric.method,
+                    path=metric.path,
+                    status_code=metric.status_code,
+                    duration_ms=metric.duration_ms,
+                    error=metric.error,
+                    created_at=metric.created_at,
+                )
+            )
+            session.commit()
+    except SQLAlchemyError:
+        return
+
+
+def _request_metrics_from_database(limit: int = 1000) -> list[RequestMetric]:
+    if get_db_type() != "postgres":
+        return []
+    try:
+        Session = create_session_factory()
+        with Session() as session:
+            rows = (
+                session.query(MonitorRequestMetricEntity)
+                .order_by(MonitorRequestMetricEntity.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+    except SQLAlchemyError:
+        return []
+    return [
+        RequestMetric(
+            method=row.method,
+            path=row.path,
+            status_code=int(row.status_code),
+            duration_ms=int(row.duration_ms or 0),
+            error=row.error or "",
+            created_at=_datetime_value(row.created_at) or datetime.utcnow(),
+        )
+        for row in reversed(rows)
+    ]
 
 
 def record_ai_metric(operation: str, ok: bool, fallback: bool, duration_ms: int, warning: str = "") -> None:
@@ -333,8 +383,9 @@ class MonitorService:
         ]
 
     def _request_snapshot(self) -> dict[str, Any]:
+        metrics_source = _request_metrics_from_database() or list(REQUEST_METRICS)
         grouped: dict[tuple[str, str], list[RequestMetric]] = defaultdict(list)
-        for metric in REQUEST_METRICS:
+        for metric in metrics_source:
             grouped[(metric.method, _normalize_path(metric.path))].append(metric)
         api_quality = []
         for (method, path), metrics in grouped.items():
@@ -362,7 +413,7 @@ class MonitorService:
                 "error": item.error or _status_text(item.status_code),
                 "created_at": _format_utc(item.created_at),
             }
-            for item in list(REQUEST_METRICS)
+            for item in metrics_source
             if item.status_code >= 400
         ][-20:]
         recent_errors.reverse()
