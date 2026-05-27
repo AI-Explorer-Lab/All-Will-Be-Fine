@@ -2,6 +2,8 @@ const ADMIN_USER = "admin";
 const TOKEN_KEY = "monitor_admin_token";
 const SESSION_KEY = "monitor_admin_session";
 const MONITOR_TIME_ZONE = "Asia/Shanghai";
+const MONITOR_SESSION_TTL_SECONDS = 8 * 60 * 60;
+const MONITOR_REMEMBER_TTL_SECONDS = 7 * 24 * 60 * 60;
 const app = document.querySelector("#monitor-app");
 
 const icons = {
@@ -107,7 +109,7 @@ let runtime = {
   loginDraft: {
     username: "",
     password: "",
-    remember: false,
+    remember: true,
   },
 };
 
@@ -602,7 +604,11 @@ app.addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify({ username, password }),
     });
-    const expiresAt = Date.now() + 1000 * 60 * 60 * 8;
+    const serverTtlSeconds = Number(data.expires_in) || MONITOR_REMEMBER_TTL_SECONDS;
+    const ttlSeconds = runtime.loginDraft.remember
+      ? serverTtlSeconds
+      : Math.min(serverTtlSeconds, MONITOR_SESSION_TTL_SECONDS);
+    const expiresAt = Date.now() + ttlSeconds * 1000;
     localStorage.setItem(TOKEN_KEY, data.access_token);
     localStorage.setItem(SESSION_KEY, JSON.stringify({ user: ADMIN_USER, expiresAt }));
     runtime.loggedIn = true;
