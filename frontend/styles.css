@@ -1,4 +1,8 @@
 :root {
+  --design-width: 1180px;
+  --app-scale: 1;
+  --app-width: 100vw;
+  --app-height: 100vh;
   --bg: oklch(0.967 0.011 92);
   --paper: oklch(0.992 0.006 90);
   --paper-warm: oklch(0.975 0.019 78);
@@ -45,7 +49,6 @@
 
 body {
   margin: 0;
-  min-width: 1180px;
   min-height: 100vh;
   color: var(--ink);
   background: var(--bg);
@@ -69,17 +72,27 @@ textarea {
 }
 
 .app-shell {
-  min-height: 100vh;
+  width: var(--app-width);
+  min-width: var(--design-width);
+  height: var(--app-height);
+  min-height: var(--app-height);
   display: grid;
   grid-template-columns: 250px minmax(930px, 1fr);
   overflow: hidden;
+  transform: scale(var(--app-scale));
+  transform-origin: top left;
   background:
     linear-gradient(132deg, oklch(0.991 0.006 92) 0%, oklch(0.958 0.016 112) 42%, oklch(0.972 0.022 73) 100%);
 }
 
 .app-shell.auth-shell {
+  width: 100vw;
+  min-width: 0;
+  height: auto;
+  min-height: 100vh;
   display: block;
   grid-template-columns: none;
+  transform: none;
 }
 
 .auth-page {
@@ -165,7 +178,7 @@ textarea {
 
 .sidebar {
   position: relative;
-  min-height: 100vh;
+  min-height: var(--app-height);
   padding: 32px 22px 54px;
   background: rgba(255, 253, 248, 0.82);
   border-right: 1px solid var(--line);
@@ -287,8 +300,8 @@ textarea {
 }
 
 .workspace {
-  min-height: 100vh;
-  height: 100vh;
+  min-height: var(--app-height);
+  height: var(--app-height);
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -478,22 +491,25 @@ textarea {
 
 .home-page {
   position: relative;
-  max-width: none;
-  margin: 0;
-  padding: 58px 30px 28px;
+  max-width: 1540px;
+  margin: 0 auto;
+  padding: 58px clamp(36px, 4vw, 70px) 28px;
 }
 
 .hero {
   position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 24vw, 420px);
+  gap: clamp(18px, 2vw, 28px);
+  align-items: start;
   min-height: 288px;
 }
 
 .hero-copy {
   position: relative;
   z-index: 2;
-  width: clamp(900px, calc(100vw - 760px), 1088px);
-  min-width: 920px;
-  margin-left: clamp(48px, 4vw, 76px);
+  width: 100%;
+  min-width: 0;
 }
 
 .hero h1 {
@@ -505,12 +521,15 @@ textarea {
 }
 
 .desk-art.hero {
-  position: absolute;
-  right: 62px;
-  top: 46px;
-  width: 420px;
-  height: 280px;
-  opacity: 0.82;
+  position: relative;
+  z-index: 3;
+  justify-self: end;
+  align-self: start;
+  top: 124px;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  height: auto;
+  opacity: 1;
   border-radius: 12px;
   object-fit: cover;
   object-position: center;
@@ -724,7 +743,7 @@ button:active {
 }
 
 .entry-row {
-  width: 976px;
+  width: min(976px, calc(100% - 40px));
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 26px;
@@ -2211,42 +2230,23 @@ button:active {
   }
 }
 
-@media (max-width: 1240px) {
-  body {
-    min-width: 1024px;
-  }
-
-  .app-shell {
-    grid-template-columns: 220px minmax(804px, 1fr);
-  }
-
-  .hero-copy {
-    width: 790px;
-    min-width: 0;
+@media (max-width: 1280px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr) 260px;
+    gap: 18px;
   }
 
   .desk-art.hero {
-    width: 320px;
-    height: 214px;
-    right: 16px;
-    top: 56px;
-  }
-
-  .entry-row {
-    margin-left: 20px;
-    margin-right: 20px;
+    top: 122px;
   }
 
   .review-context {
-    grid-template-columns: 1fr;
-    gap: 14px;
+    grid-template-columns: 300px minmax(0, 1fr);
+    gap: 16px;
   }
 
   .review-mode-row {
-    max-width: 312px;
-  }
-
-  .draft-field-grid {
-    grid-template-columns: 1fr;
+    width: min(300px, 100%);
   }
 }
+

@@ -11,6 +11,7 @@ const API_BASE = localStorage.getItem("review_api_base") || defaultApiBase();
 const AUTH_TOKEN_KEY = "review_auth_token";
 const AUTH_USER_KEY = "review_auth_user";
 const THEME_KEY = "review_theme";
+const DESIGN_WIDTH = 1180;
 const app = document.querySelector("#app");
 
 const store = {
@@ -97,6 +98,17 @@ function resolvedTheme() {
 
 function applyTheme() {
   document.documentElement.dataset.theme = resolvedTheme();
+}
+
+function updateViewportScale() {
+  const width = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
+  const height = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
+  const nextScale = Math.min(1, width / DESIGN_WIDTH);
+  const scaledWidth = Math.max(DESIGN_WIDTH, width / nextScale);
+  const scaledHeight = height / nextScale;
+  document.documentElement.style.setProperty("--app-scale", nextScale.toFixed(4));
+  document.documentElement.style.setProperty("--app-width", `${scaledWidth.toFixed(2)}px`);
+  document.documentElement.style.setProperty("--app-height", `${scaledHeight.toFixed(2)}px`);
 }
 
 function cycleTheme() {
@@ -2438,7 +2450,9 @@ app.addEventListener("compositionend", (event) => {
   }
 });
 
+updateViewportScale();
 applyTheme();
+window.addEventListener("resize", updateViewportScale);
 window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
   if (state.theme === "system") {
     applyTheme();
