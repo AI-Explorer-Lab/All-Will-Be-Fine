@@ -64,7 +64,7 @@ function fallbackSummary() {
   return {
     environment: "local",
     database: { type: "postgres", connected: false, latency_ms: 0 },
-    agent: { provider: "OpenAI", model: "gpt-5.2", api_key_configured: false },
+    agent: { provider: "OpenAI", model: "gpt-5.4-mini", api_key_configured: false },
     business: {
       users: 0,
       reviews: 0,
