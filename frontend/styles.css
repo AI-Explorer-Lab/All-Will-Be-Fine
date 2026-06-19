@@ -1892,6 +1892,17 @@ button:active {
   height: 26px;
 }
 
+.ai-unavailable-modal {
+  border-color: #eeb885;
+}
+
+.ai-unavailable-modal .modal-mark {
+  color: #9a4a20;
+  background:
+    radial-gradient(circle at 35% 25%, #fff8cd 0 18%, transparent 19%),
+    #ffe8d1;
+}
+
 .confirm-modal h2 {
   margin: 0 0 12px;
   font-size: 25px;

@@ -52,6 +52,7 @@ const state = {
   saving: false,
   followUpLoading: false,
   saveDialogOpen: false,
+  aiDialogOpen: false,
   searchComposing: false,
   apiOnline: false,
   toast: "",
@@ -1015,6 +1016,7 @@ function shell(content) {
       </header>
       ${content}
       ${state.toast ? `<div class="toast">${state.toast}</div>` : ""}
+      ${state.aiDialogOpen ? aiUnavailableDialog() : ""}
     </section>
   `;
 }
@@ -1359,6 +1361,22 @@ function saveMethodDialog() {
         <div class="modal-actions">
           <button class="secondary-button" data-skip-method-library>不保存</button>
           <button class="primary-button" data-save-record-method ${state.saving ? "disabled" : ""}>保存</button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function aiUnavailableDialog() {
+  return `
+    <div class="modal-backdrop" role="presentation">
+      <section class="confirm-modal ai-unavailable-modal" role="dialog" aria-modal="true" aria-labelledby="ai-unavailable-title">
+        <div class="modal-mark">${icons.spark}</div>
+        <h2 id="ai-unavailable-title">AI 功能暂未开放</h2>
+        <p>大模型接口正在喝热水修嗓子，暂时不能帮你自动复盘。你可以先走手动复盘流程，等它精神上线后再把方向盘交给 AI。</p>
+        <div class="modal-actions">
+          <button class="secondary-button" data-close-ai-dialog>知道啦</button>
+          <button class="primary-button" data-ai-manual-review>我先手动复盘</button>
         </div>
       </section>
     </div>
@@ -2189,6 +2207,17 @@ app.addEventListener("click", async (event) => {
     notify(target.dataset.toast);
   }
 
+  if (target.dataset.closeAiDialog !== undefined) {
+    setState({ aiDialogOpen: false });
+    return;
+  }
+
+  if (target.dataset.aiManualReview !== undefined) {
+    setState({ aiDialogOpen: false });
+    startManualReview();
+    return;
+  }
+
   if (target.dataset.searchSubmit !== undefined) {
     submitSearch(app.querySelector("[data-search]")?.value || "");
     return;
@@ -2205,12 +2234,12 @@ app.addEventListener("click", async (event) => {
   }
 
   if (target.dataset.homeAi !== undefined) {
-    analyzeDraft();
+    setState({ aiDialogOpen: true });
     return;
   }
 
   if (target.dataset.analyze !== undefined) {
-    analyzeDraft();
+    setState({ aiDialogOpen: true });
     return;
   }
 
