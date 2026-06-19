@@ -44,7 +44,7 @@ class SlotCompletionService:
     ) -> dict[str, Any]:
         base_url = str(config.get("base_url") or "https://api.openai.com/v1").rstrip("/")
         payload = {
-            "model": config.get("model") or "gpt-5.2",
+            "model": config.get("model") or "gpt-5.4-mini",
             "instructions": (
                 "你是一个私人复盘助手。请把用户输入补全成结构化复盘槽位。"
                 "不要说教，不要泛泛而谈。输入缺少的信息可以温和推断；无法判断时明确写出需要后续确认。"
@@ -116,7 +116,7 @@ class SlotCompletionService:
     ) -> dict[str, Any]:
         base_url = str(config.get("base_url") or "https://api.openai.com/v1").rstrip("/")
         payload = {
-            "model": config.get("model") or "gpt-5.2",
+            "model": config.get("model") or "gpt-5.4-mini",
             "instructions": (
                 "你是私人复盘助手。请基于既有复盘结果继续追问，目标是补出更具体、可行动的信息。"
                 "输出要短、具体、温和，不要重复已有内容。只返回符合 schema 的 JSON。"
