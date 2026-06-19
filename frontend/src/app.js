@@ -1069,9 +1069,12 @@ function authPage() {
           <button class="primary-button auth-submit" type="submit" ${state.authSubmitting ? "disabled" : ""}>
             ${state.authSubmitting ? "处理中..." : isRegister ? "创建并登录" : "登录"}
           </button>
-          <button class="text-link" type="button" data-auth-mode="${isRegister ? "login" : "register"}">
-            ${isRegister ? "已有账号，去登录" : "没有账号，创建一个"}
-          </button>
+          <div class="auth-links">
+            ${isRegister ? "" : `<span class="text-link auth-help-text">忘记账号密码请联系管理员</span>`}
+            <button class="text-link" type="button" data-auth-mode="${isRegister ? "login" : "register"}">
+              ${isRegister ? "已有账号，去登录" : "没有账号，创建一个"}
+            </button>
+          </div>
         </form>
       </div>
       ${state.toast ? `<div class="toast">${state.toast}</div>` : ""}

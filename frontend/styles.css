@@ -169,11 +169,21 @@ textarea {
   margin-top: 6px;
 }
 
+.auth-links {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+}
+
 .text-link {
   justify-self: center;
   color: var(--orange-dark);
   background: transparent;
   font-weight: 800;
+}
+
+.auth-help-text {
+  line-height: 1.2;
 }
 
 .sidebar {
