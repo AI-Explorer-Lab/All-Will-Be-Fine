@@ -424,7 +424,8 @@ function normalizeCalibration(card) {
 
 function firstValue(object) {
   const value = Object.values(object || {})[0];
-  return Array.isArray(value) ? value[0] : value;
+  const effective = effectiveFieldValue(value);
+  return Array.isArray(effective) ? effective[0] : effective;
 }
 
 function searchableText(value) {
@@ -891,13 +892,13 @@ function findMethodForRecord(record) {
 }
 
 function createMethodFromRecord(record) {
-  const steps = record.resultCard?.下次怎么做 || record.resultCard?.["下次怎么做"] || [];
+  const steps = effectiveFieldValue(record.resultCard?.下次怎么做 || record.resultCard?.["下次怎么做"] || []);
   const method = normalizeMethod({
     id: `local-method-${Date.now()}`,
     sourceReviewId: record.id,
     title: `${record.title.slice(0, 14)}方法卡`,
     scenes: [record.scene],
-    trigger: record.summary?.需要改进的地方 || "再次遇到类似情况前",
+    trigger: effectiveFieldValue(record.summary?.需要改进的地方) || "再次遇到类似情况前",
     steps: Array.isArray(steps) && steps.length ? steps : ["复述当前情况", "确认目标和边界", "列出下一步行动"],
     source: record.title,
     createdAt: localDateTimeKey(),
@@ -919,14 +920,14 @@ function calibrationFromRecord(record) {
   return normalizeCalibration({
     id: `derived-calibration-${record.id}`,
     sourceReviewId: record.id,
-    worry: summary.我在担心什么 || record.rawInput || record.title,
+    worry: effectiveFieldValue(summary.我在担心什么) || record.rawInput || record.title,
     scene: record.scene,
     estimatedProbability: "待校准",
     verificationDate: "",
     status: "pending",
     finalResult: "",
     actualImpact: "",
-    calibrationConclusion: resultCard.提醒自己 || summary.现实检查 || "",
+    calibrationConclusion: effectiveFieldValue(resultCard.提醒自己) || effectiveFieldValue(summary.现实检查) || "",
   });
 }
 
@@ -976,11 +977,15 @@ function syncFieldValue(oldValue, newValue) {
 }
 
 function editableFields(object, fallback) {
-  return objectFields(object, fallback).map(([label, value]) => [label, Array.isArray(value) ? value : String(value || "")]);
+  return objectFields(object, fallback).map(([label, value]) => {
+    const effective = effectiveFieldValue(value);
+    return [label, Array.isArray(effective) ? effective : String(effective || "")];
+  });
 }
 
 function parseEditableValue(value, originalValue) {
-  if (!Array.isArray(originalValue)) return value.trim();
+  const effective = effectiveFieldValue(originalValue);
+  if (!Array.isArray(effective)) return value.trim();
   return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
 }
 
@@ -1408,6 +1413,28 @@ function sectionedFields(title, fields) {
 }
 
 function fieldBody(value) {
+  if (isAssistedField(value)) {
+    const userContent = value.user_content;
+    const suggestion = value.ai_suggestion;
+    return `
+      <div class="assisted-field">
+        <section class="field-source user-source">
+          <span>你的记录</span>
+          ${basicFieldBody(userContent)}
+        </section>
+        ${displayValue(suggestion) ? `
+          <section class="field-source ai-source">
+            <span>AI 补充</span>
+            ${basicFieldBody(suggestion)}
+          </section>
+        ` : ""}
+      </div>
+    `;
+  }
+  return basicFieldBody(value);
+}
+
+function basicFieldBody(value) {
   if (Array.isArray(value)) {
     return `<ol>${value.map((item) => `<li>${escapeHtml(displayValue(item))}</li>`).join("")}</ol>`;
   }
@@ -1416,6 +1443,15 @@ function fieldBody(value) {
     .split("\n")
     .map((line) => `<p>${escapeHtml(line)}</p>`)
     .join("");
+}
+
+function isAssistedField(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && "user_content" in value);
+}
+
+function effectiveFieldValue(value) {
+  if (!isAssistedField(value)) return value;
+  return value.user_content || value.ai_suggestion || "";
 }
 
 function displayValue(value) {

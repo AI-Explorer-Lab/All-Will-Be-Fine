@@ -23,13 +23,13 @@ from backend.service.monitor_service import record_ai_metric
 class SlotCompletionService:
     def complete(self, request: CreateReviewRequest, prompt: str) -> tuple[dict[str, Any], list[str]]:
         started = time.perf_counter()
-        fallback = build_fallback_slots(request)
+        fallback = build_fallback_slots(request, apply_user_fields=False)
         config = load_config().get("agent", {})
         api_key = resolve_api_key(config.get("api_key_env") or "OPENAI_API_KEY") or config.get("api_key")
         if not api_key:
             warning = "当前未设置大模型 API Key，已使用本地槽位补全"
             record_ai_metric("slot_completion", False, True, int((time.perf_counter() - started) * 1000), warning)
-            return fallback, [warning]
+            return apply_provided_fields(fallback, request.type, request.provided_fields), [warning]
 
         try:
             ai_slots = self._complete_with_responses_api(request, prompt, config, api_key)
@@ -39,7 +39,7 @@ class SlotCompletionService:
         except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
             warning = f"大模型槽位补全失败，已使用本地兜底：{format_completion_error(error)}"
             record_ai_metric("slot_completion", False, True, int((time.perf_counter() - started) * 1000), warning)
-            return fallback, [warning]
+            return apply_provided_fields(fallback, request.type, request.provided_fields), [warning]
 
     def _complete_with_responses_api(
         self,
@@ -53,7 +53,10 @@ class SlotCompletionService:
             "model": config.get("model") or "gpt-5.4-mini",
             "instructions": (
                 "你是一个私人复盘助手。请把用户输入补全成结构化复盘槽位。"
-                "不要说教，不要泛泛而谈。输入缺少的信息可以温和推断；无法判断时明确写出需要后续确认。"
+                "用户已经填写的字段不得覆盖或改写，只能在 ai_suggestions 中给出独立补充。"
+                "只有空字段可以由你直接补全。不要虚构事实、动机、情绪或责任归属。"
+                "建议必须短、具体、可执行，尽量包含触发时机、动作和完成标准。"
+                "无法判断时明确写出需要用户确认。"
                 "只返回符合 schema 的 JSON。"
             ),
             "input": [
@@ -290,10 +293,19 @@ def response_schema(review_type: str = EVENT_TYPE) -> dict[str, Any]:
             "scene": {"type": "string", "enum": scene_options},
             "summary": {"type": "object", "additionalProperties": True},
             "result_card": {"type": "object", "additionalProperties": True},
+            "ai_suggestions": {"type": "object", "additionalProperties": True},
             "method_card": {"type": "object", "additionalProperties": True},
             "calibration_card": {"type": "object", "additionalProperties": True},
         },
-        "required": ["title", "scene", "summary", "result_card", "method_card", "calibration_card"],
+        "required": [
+            "title",
+            "scene",
+            "summary",
+            "result_card",
+            "ai_suggestions",
+            "method_card",
+            "calibration_card",
+        ],
     }
 
 
@@ -316,16 +328,21 @@ def slot_schema_hint(review_type: str) -> dict[str, list[str]]:
         return {
             "summary": ["我在担心什么", "现实检查", "我能做什么", "提醒自己"],
             "result_card": ["我能做什么", "提醒自己"],
+            "ai_suggestions": ["仅为用户已填写字段提供独立补充，不重复原文"],
             "calibration_card": ["worry", "scene", "estimated_probability", "verification_date"],
         }
     return {
         "summary": ["发生了什么", "需要改进的地方", "下次怎么做", "提醒自己"],
         "result_card": ["需要改进的地方", "下次怎么做", "提醒自己"],
+        "ai_suggestions": ["仅为用户已填写字段提供独立补充，不重复原文"],
         "method_card": ["title", "scenes", "trigger", "steps", "reminder"],
     }
 
 
-def build_fallback_slots(request: CreateReviewRequest) -> dict[str, Any]:
+def build_fallback_slots(
+    request: CreateReviewRequest,
+    apply_user_fields: bool = True,
+) -> dict[str, Any]:
     raw_input = normalize_text(request.raw_input)
     title = title_from_input(raw_input, request.type)
     scene = request.scene or ("面试" if request.type == ANXIETY_TYPE else "工作")
@@ -333,7 +350,32 @@ def build_fallback_slots(request: CreateReviewRequest) -> dict[str, Any]:
         slots = anxiety_slots(raw_input, title, scene)
     else:
         slots = event_slots(raw_input, title, scene)
-    return apply_provided_fields(slots, request.type, request.provided_fields)
+    slots["ai_suggestions"] = fallback_ai_suggestions(request.type, request.provided_fields)
+    return apply_provided_fields(slots, request.type, request.provided_fields) if apply_user_fields else slots
+
+
+def fallback_ai_suggestions(review_type: str, provided_fields: dict[str, Any] | None) -> dict[str, Any]:
+    fields = provided_fields if isinstance(provided_fields, dict) else {}
+    templates = (
+        {
+            "我在担心什么": "可以再区分：哪些是已经发生的事实，哪些是对未来结果的担心。",
+            "现实检查": "可以补充支持和反驳这个担心的具体证据；暂时无法确认的部分标记为需要验证。",
+            "我能做什么": "可以为行动补充执行时间和完成标准，先选择一个 30 分钟内能完成的最小步骤。",
+            "提醒自己": "保留这句话即可；需要时可以再加一个立刻能做的动作，让提醒更容易落地。",
+        }
+        if review_type == ANXIETY_TYPE
+        else {
+            "发生了什么": "可以再补充这件事造成的具体结果或影响，避免只记录过程。",
+            "需要改进的地方": "可以进一步明确：是目标、边界、信息、沟通方式，还是验收标准没有确认。",
+            "下次怎么做": "可以为每个动作补充触发时机和完成标准，确保下次能够直接执行。",
+            "提醒自己": "保留这句话即可；如果希望更有行动性，可以加上开始前要做的第一个动作。",
+        }
+    )
+    return {
+        key: suggestion
+        for key, suggestion in templates.items()
+        if fields.get(key) not in (None, "", [])
+    }
 
 
 def apply_provided_fields(
@@ -347,6 +389,7 @@ def apply_provided_fields(
 
     summary = slots.get("summary") or {}
     result_card = slots.get("result_card") or {}
+    ai_suggestions = slots.get("ai_suggestions") if isinstance(slots.get("ai_suggestions"), dict) else {}
     mapping = (
         {
             "我在担心什么": ("我在担心什么", False),
@@ -368,9 +411,13 @@ def apply_provided_fields(
         if value in (None, "", []):
             continue
         normalized = _provided_list(value) if as_list else str(value).strip()
-        summary[target_key] = normalized
+        assisted_value = {
+            "user_content": normalized,
+            "ai_suggestion": normalize_slot_value(ai_suggestions.get(source_key, "")),
+        }
+        summary[target_key] = assisted_value
         if target_key != primary_key:
-            result_card[target_key] = normalized
+            result_card[target_key] = assisted_value
 
     slots["summary"] = summary
     slots["result_card"] = result_card
@@ -475,6 +522,9 @@ def merge_slots(fallback: dict[str, Any], ai_slots: dict[str, Any]) -> dict[str,
             merged[key] = ai_slots[key].strip()
     for key in ["summary", "result_card"]:
         merged[key] = normalize_slot_mapping(merge_mapping(fallback.get(key, {}), ai_slots.get(key, {})))
+    merged["ai_suggestions"] = normalize_slot_mapping(
+        merge_mapping(fallback.get("ai_suggestions", {}), ai_slots.get("ai_suggestions", {}))
+    )
     for key in ["method_card", "calibration_card"]:
         if isinstance(fallback.get(key), dict) or isinstance(ai_slots.get(key), dict):
             merged[key] = merge_mapping(fallback.get(key) or {}, ai_slots.get(key) or {})

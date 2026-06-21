@@ -60,10 +60,42 @@ class ReviewServiceTest(unittest.TestCase):
 
         bundle = service.analyze(request, UserContext(user_id="u3"))
 
-        self.assertEqual(bundle.record.summary["需要改进的地方"], "开发前没有确认字段语义")
-        self.assertEqual(bundle.record.result_card["下次怎么做"], ["先复述需求", "再确认验收标准"])
+        improvement = bundle.record.summary["需要改进的地方"]
+        next_steps = bundle.record.result_card["下次怎么做"]
+        self.assertEqual(improvement["user_content"], "开发前没有确认字段语义")
+        self.assertIn("进一步明确", improvement["ai_suggestion"])
+        self.assertEqual(next_steps["user_content"], ["先复述需求", "再确认验收标准"])
+        self.assertIn("完成标准", next_steps["ai_suggestion"])
         self.assertEqual(bundle.method_card.steps, ["先复述需求", "再确认验收标准"])
         self.assertEqual(bundle.method_card.reminder, "先确认，再动手")
+
+    def test_ai_suggestion_does_not_replace_user_content(self):
+        class SuggestionCompleter:
+            def complete(self, request, prompt):
+                slots = build_fallback_slots(request, apply_user_fields=False)
+                slots["summary"]["需要改进的地方"] = "AI 擅自改写的结论"
+                slots["ai_suggestions"]["需要改进的地方"] = "建议明确是哪一个验收标准没有提前确认。"
+                from backend.service.slot_completion_service import apply_provided_fields
+
+                return apply_provided_fields(slots, request.type, request.provided_fields), []
+
+            def follow_up(self, record, question="", stage="result"):
+                return build_fallback_follow_up(record, question), []
+
+        service = ReviewService(slot_completer=SuggestionCompleter())
+        request = CreateReviewRequest(
+            type="event",
+            scene="工作",
+            raw_input="接口返工",
+            provided_fields={"需要改进的地方": "沟通不够清楚"},
+        )
+
+        bundle = service.analyze(request, UserContext(user_id="u5"))
+        field = bundle.record.summary["需要改进的地方"]
+
+        self.assertEqual(field["user_content"], "沟通不够清楚")
+        self.assertEqual(field["ai_suggestion"], "建议明确是哪一个验收标准没有提前确认。")
+        self.assertNotIn("AI 擅自改写", str(field))
 
     def test_generated_tags_are_limited_to_scene_whitelist(self):
         class InvalidTagCompleter:
