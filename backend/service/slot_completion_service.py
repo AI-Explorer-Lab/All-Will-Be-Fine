@@ -10,7 +10,12 @@ from typing import Any
 from urllib.parse import urlparse
 
 from backend.config.config import load_config
-from backend.constant.review_constants import ANXIETY_TYPE, EVENT_TYPE
+from backend.constant.review_constants import (
+    ANXIETY_SCENES,
+    ANXIETY_TYPE,
+    EVENT_SCENES,
+    EVENT_TYPE,
+)
 from backend.domain.req import CreateReviewRequest
 from backend.service.monitor_service import record_ai_metric
 
@@ -29,7 +34,8 @@ class SlotCompletionService:
         try:
             ai_slots = self._complete_with_responses_api(request, prompt, config, api_key)
             record_ai_metric("slot_completion", True, False, int((time.perf_counter() - started) * 1000))
-            return merge_slots(fallback, ai_slots), []
+            merged = merge_slots(fallback, ai_slots)
+            return apply_provided_fields(merged, request.type, request.provided_fields), []
         except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
             warning = f"大模型槽位补全失败，已使用本地兜底：{format_completion_error(error)}"
             record_ai_metric("slot_completion", False, True, int((time.perf_counter() - started) * 1000), warning)
@@ -72,7 +78,7 @@ class SlotCompletionService:
                 "format": {
                     "type": "json_schema",
                     "name": "review_slots",
-                    "schema": response_schema(),
+                    "schema": response_schema(request.type),
                     "strict": False,
                 },
                 "verbosity": "medium",
@@ -274,13 +280,14 @@ def parse_sse_response(raw: str) -> dict[str, Any]:
         raise ValueError("empty_stream_response") from error
 
 
-def response_schema() -> dict[str, Any]:
+def response_schema(review_type: str = EVENT_TYPE) -> dict[str, Any]:
+    scene_options = ANXIETY_SCENES if review_type == ANXIETY_TYPE else EVENT_SCENES
     return {
         "type": "object",
         "additionalProperties": False,
         "properties": {
             "title": {"type": "string"},
-            "scene": {"type": "string"},
+            "scene": {"type": "string", "enum": scene_options},
             "summary": {"type": "object", "additionalProperties": True},
             "result_card": {"type": "object", "additionalProperties": True},
             "method_card": {"type": "object", "additionalProperties": True},
@@ -323,8 +330,65 @@ def build_fallback_slots(request: CreateReviewRequest) -> dict[str, Any]:
     title = title_from_input(raw_input, request.type)
     scene = request.scene or ("面试" if request.type == ANXIETY_TYPE else "工作")
     if request.type == ANXIETY_TYPE:
-        return anxiety_slots(raw_input, title, scene)
-    return event_slots(raw_input, title, scene)
+        slots = anxiety_slots(raw_input, title, scene)
+    else:
+        slots = event_slots(raw_input, title, scene)
+    return apply_provided_fields(slots, request.type, request.provided_fields)
+
+
+def apply_provided_fields(
+    slots: dict[str, Any],
+    review_type: str,
+    provided_fields: dict[str, Any] | None,
+) -> dict[str, Any]:
+    fields = provided_fields if isinstance(provided_fields, dict) else {}
+    if not fields:
+        return slots
+
+    summary = slots.get("summary") or {}
+    result_card = slots.get("result_card") or {}
+    mapping = (
+        {
+            "我在担心什么": ("我在担心什么", False),
+            "现实检查": ("现实检查", False),
+            "我能做什么": ("我能做什么", True),
+            "提醒自己": ("提醒自己", False),
+        }
+        if review_type == ANXIETY_TYPE
+        else {
+            "发生了什么": ("发生了什么", False),
+            "需要改进的地方": ("需要改进的地方", False),
+            "下次怎么做": ("下次怎么做", True),
+            "提醒自己": ("提醒自己", False),
+        }
+    )
+    primary_key = "我在担心什么" if review_type == ANXIETY_TYPE else "发生了什么"
+    for source_key, (target_key, as_list) in mapping.items():
+        value = fields.get(source_key)
+        if value in (None, "", []):
+            continue
+        normalized = _provided_list(value) if as_list else str(value).strip()
+        summary[target_key] = normalized
+        if target_key != primary_key:
+            result_card[target_key] = normalized
+
+    slots["summary"] = summary
+    slots["result_card"] = result_card
+    if review_type == EVENT_TYPE and isinstance(slots.get("method_card"), dict):
+        method_card = slots["method_card"]
+        if fields.get("需要改进的地方"):
+            method_card["trigger"] = str(fields["需要改进的地方"]).strip()
+        if fields.get("下次怎么做"):
+            method_card["steps"] = _provided_list(fields["下次怎么做"])
+        if fields.get("提醒自己"):
+            method_card["reminder"] = str(fields["提醒自己"]).strip()
+    return slots
+
+
+def _provided_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [item.strip() for item in str(value).splitlines() if item.strip()]
 
 
 def event_slots(raw_input: str, title: str, scene: str) -> dict[str, Any]:

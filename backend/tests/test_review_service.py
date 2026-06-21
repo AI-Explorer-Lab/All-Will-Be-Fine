@@ -44,6 +44,46 @@ class ReviewServiceTest(unittest.TestCase):
         self.assertNotIn("可控部分", bundle.record.summary)
         self.assertIn("我能做什么", bundle.record.result_card)
 
+    def test_ai_review_uses_all_user_provided_fields(self):
+        service = ReviewService(slot_completer=FakeSlotCompleter())
+        request = CreateReviewRequest(
+            type="event",
+            scene="工作",
+            raw_input="发布前发现接口字段理解错了",
+            provided_fields={
+                "发生了什么": "发布前发现接口字段理解错了",
+                "需要改进的地方": "开发前没有确认字段语义",
+                "下次怎么做": "先复述需求\n再确认验收标准",
+                "提醒自己": "先确认，再动手",
+            },
+        )
+
+        bundle = service.analyze(request, UserContext(user_id="u3"))
+
+        self.assertEqual(bundle.record.summary["需要改进的地方"], "开发前没有确认字段语义")
+        self.assertEqual(bundle.record.result_card["下次怎么做"], ["先复述需求", "再确认验收标准"])
+        self.assertEqual(bundle.method_card.steps, ["先复述需求", "再确认验收标准"])
+        self.assertEqual(bundle.method_card.reminder, "先确认，再动手")
+
+    def test_generated_tags_are_limited_to_scene_whitelist(self):
+        class InvalidTagCompleter:
+            def complete(self, request, prompt):
+                slots = build_fallback_slots(request)
+                slots["scene"] = "需求沟通"
+                slots["method_card"]["scenes"] = ["开发", "需求沟通"]
+                return slots, []
+
+            def follow_up(self, record, question="", stage="result"):
+                return build_fallback_follow_up(record, question), []
+
+        service = ReviewService(slot_completer=InvalidTagCompleter())
+        request = CreateReviewRequest(type="event", scene="工作", raw_input="接口理解错误")
+
+        bundle = service.analyze(request, UserContext(user_id="u4"))
+
+        self.assertEqual(bundle.record.scene, "工作")
+        self.assertEqual(bundle.method_card.scenes, ["其他"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,7 +4,12 @@ from datetime import datetime
 from uuid import uuid4
 
 from agent.review_prompt_builder import build_review_prompt
-from backend.constant.review_constants import ANXIETY_TYPE, EVENT_TYPE
+from backend.constant.review_constants import (
+    ANXIETY_TYPE,
+    EVENT_TYPE,
+    normalize_scene,
+    normalize_scenes,
+)
 from backend.domain.models import CalibrationCard, MethodCard, ReviewBundle, ReviewRecord, UserContext
 from backend.domain.req import CreateReviewRequest, FollowUpRequest, UpdateNoteRequest
 from backend.exceptions.business_exception import NotFoundException
@@ -18,7 +23,7 @@ class ReviewService:
         self.slot_completer = slot_completer or SlotCompletionService()
 
     def analyze(self, request: CreateReviewRequest, user: UserContext) -> ReviewBundle:
-        prompt = build_review_prompt(request.type, request.raw_input, request.scene)
+        prompt = build_review_prompt(request.type, request.raw_input, request.scene, request.provided_fields)
         slots, warnings = self.slot_completer.complete(request, prompt)
         bundle = self._bundle_from_slots(request, slots, warnings)
         if not request.persist:
@@ -60,7 +65,7 @@ class ReviewService:
         record = ReviewRecord(
             id=review_id,
             type=payload.get("type", existing.type),
-            scene=payload.get("scene", existing.scene),
+            scene=normalize_scene(payload.get("scene", existing.scene), payload.get("type", existing.type)),
             title=payload.get("title", existing.title),
             raw_input=payload.get("raw_input") or payload.get("rawInput") or existing.raw_input,
             summary=payload.get("summary", existing.summary),
@@ -88,7 +93,7 @@ class ReviewService:
             id=method_id,
             source_review_id=payload.get("source_review_id") or payload.get("sourceReviewId") or existing.source_review_id,
             title=payload.get("title", existing.title),
-            scenes=_as_list(payload.get("scenes")) or existing.scenes,
+            scenes=normalize_scenes(_as_list(payload.get("scenes")) or existing.scenes, EVENT_TYPE),
             trigger=payload.get("trigger", existing.trigger),
             steps=_as_list(payload.get("steps")) or existing.steps,
             reminder=payload.get("reminder", existing.reminder),
@@ -105,7 +110,7 @@ class ReviewService:
             id=calibration_id,
             source_review_id=payload.get("source_review_id") or payload.get("sourceReviewId") or existing.source_review_id,
             worry=payload.get("worry", existing.worry),
-            scene=payload.get("scene", existing.scene),
+            scene=normalize_scene(payload.get("scene", existing.scene), ANXIETY_TYPE),
             estimated_probability=payload.get("estimated_probability") or payload.get("estimatedProbability") or existing.estimated_probability,
             verification_date=payload.get("verification_date") or payload.get("verificationDate") or existing.verification_date,
             status=payload.get("status", existing.status),
@@ -145,7 +150,7 @@ class ReviewService:
         now = _now_iso()
         review_id = f"{request.type}-{uuid4().hex[:10]}"
         title = slots.get("title") or title_from_input(request.raw_input, request.type)
-        scene = request.scene or slots.get("scene") or ("面试" if request.type == ANXIETY_TYPE else "工作")
+        scene = normalize_scene(request.scene or slots.get("scene"), request.type)
 
         if request.type == ANXIETY_TYPE:
             record = ReviewRecord(
@@ -189,7 +194,7 @@ class ReviewService:
             id=f"method-{uuid4().hex[:8]}",
             source_review_id=review_id,
             title=method_slots.get("title") or "开始前确认卡",
-            scenes=_as_list(method_slots.get("scenes")) or [record.scene, "复盘"],
+            scenes=normalize_scenes(_as_list(method_slots.get("scenes")) or [record.scene], EVENT_TYPE),
             trigger=method_slots.get("trigger") or "准备开始处理类似事情前",
             steps=_as_list(method_slots.get("steps")) or ["复述理解", "确认目标和边界", "列出不确定点", "确认样例和验收标准"],
             reminder=method_slots.get("reminder") or "开始做之前，先确认清楚，返工的成本更高。",
@@ -269,7 +274,7 @@ def _bundle_from_payload(payload: dict) -> ReviewBundle:
     record = ReviewRecord(
         id=record_payload["id"],
         type=record_payload.get("type", EVENT_TYPE),
-        scene=record_payload.get("scene") or "",
+        scene=normalize_scene(record_payload.get("scene"), record_payload.get("type", EVENT_TYPE)),
         title=record_payload.get("title") or "",
         raw_input=record_payload.get("raw_input") or record_payload.get("rawInput") or "",
         summary=record_payload.get("summary") or {},
@@ -288,7 +293,7 @@ def _bundle_from_payload(payload: dict) -> ReviewBundle:
             id=method_payload["id"],
             source_review_id=method_payload.get("source_review_id") or method_payload.get("sourceReviewId") or record.id,
             title=method_payload.get("title") or "",
-            scenes=_as_list(method_payload.get("scenes")),
+            scenes=normalize_scenes(_as_list(method_payload.get("scenes")), EVENT_TYPE),
             trigger=method_payload.get("trigger") or "",
             steps=_as_list(method_payload.get("steps")),
             reminder=method_payload.get("reminder") or "",
@@ -303,7 +308,7 @@ def _bundle_from_payload(payload: dict) -> ReviewBundle:
             id=calibration_payload["id"],
             source_review_id=calibration_payload.get("source_review_id") or calibration_payload.get("sourceReviewId") or record.id,
             worry=calibration_payload.get("worry") or "",
-            scene=calibration_payload.get("scene") or record.scene,
+            scene=normalize_scene(calibration_payload.get("scene") or record.scene, ANXIETY_TYPE),
             estimated_probability=calibration_payload.get("estimated_probability") or calibration_payload.get("estimatedProbability") or "",
             verification_date=calibration_payload.get("verification_date") or calibration_payload.get("verificationDate") or "",
             status=calibration_payload.get("status") or "pending",

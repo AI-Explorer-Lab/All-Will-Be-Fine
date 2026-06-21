@@ -311,7 +311,8 @@ async function hydrateFromBackend() {
 }
 
 async function analyzeDraft() {
-  const rawInput = composeDraftInput();
+  const rawInput = state.draft.trim();
+  const providedFields = composeDraftFields();
   if (!state.draft.trim()) {
     notify("先写下一点内容，再开始整理");
     return;
@@ -321,7 +322,13 @@ async function analyzeDraft() {
   try {
     const bundle = await request("/reviews/analyze", {
       method: "POST",
-      body: JSON.stringify({ type: state.mode, scene: state.scene, raw_input: rawInput, persist: false }),
+      body: JSON.stringify({
+        type: state.mode,
+        scene: state.scene,
+        raw_input: rawInput,
+        provided_fields: providedFields,
+        persist: false,
+      }),
     });
     const normalized = normalizeBundle(bundle);
     state.currentBundle = normalized;
@@ -330,7 +337,7 @@ async function analyzeDraft() {
     notify(normalized.warnings.length ? normalized.warnings[0] : "已生成行动卡");
   } catch (error) {
     if (handleAuthError(error)) return;
-    const fallback = buildLocalBundle(rawInput, state.mode, state.scene);
+    const fallback = buildManualBundle(rawInput, state.mode, state.scene, currentDraftFields());
     state.currentBundle = fallback;
     setState({ loading: false, route: "result", apiOnline: false });
     notify("后端未连接，已用本地结果继续流程");
@@ -368,7 +375,7 @@ function normalizeRecord(record) {
   return {
     id: record.id,
     type,
-    scene: record.scene || "其他",
+    scene: normalizeScene(record.scene, type),
     title: record.title || (type === "event" ? "新的事件复盘" : "新的焦虑复盘"),
     date: createdAt,
     createdAt,
@@ -385,11 +392,12 @@ function normalizeRecord(record) {
 }
 
 function normalizeMethod(card) {
+  const validScenes = (card.scenes || []).filter((scene) => fixedSceneTags("event").includes(scene));
   return {
     id: card.id,
     sourceReviewId: card.source_review_id || card.sourceReviewId || "",
     title: card.title,
-    scenes: card.scenes || [],
+    scenes: validScenes.length ? validScenes : ["其他"],
     trigger: card.trigger || "",
     steps: card.steps || [],
     reminder: card.reminder || "",
@@ -404,7 +412,7 @@ function normalizeCalibration(card) {
     id: card.id,
     sourceReviewId: card.source_review_id || card.sourceReviewId || "",
     worry: card.worry,
-    scene: card.scene,
+    scene: normalizeScene(card.scene, "anxiety"),
     estimatedProbability: card.estimated_probability || card.estimatedProbability || "80%",
     verificationDate: card.verification_date || card.verificationDate || "",
     status: card.status || "pending",
@@ -693,6 +701,10 @@ function fixedSceneTags(mode) {
   return [...new Set(source)];
 }
 
+function normalizeScene(scene, mode) {
+  return fixedSceneTags(mode).includes(scene) ? scene : "其他";
+}
+
 function sceneSelect(currentScene, mode, attr = "data-record-scene") {
   const options = fixedSceneTags(mode);
   const value = options.includes(currentScene) ? currentScene : "其他";
@@ -735,7 +747,7 @@ function splitLines(value) {
     .filter(Boolean);
 }
 
-function composeDraftInput() {
+function composeDraftFields() {
   const base = state.draft.trim();
   const fields = currentDraftFields();
   const lines = state.mode === "event"
@@ -751,10 +763,9 @@ function composeDraftInput() {
         ["我能做什么", fields.action],
         ["提醒自己", fields.reminder],
       ];
-  return lines
+  return Object.fromEntries(lines
     .filter(([, value]) => String(value || "").trim())
-    .map(([label, value]) => `${label}：${String(value).trim()}`)
-    .join("\n");
+    .map(([label, value]) => [label, String(value).trim()]));
 }
 
 function buildLocalBundle(rawInput, mode, scene) {
