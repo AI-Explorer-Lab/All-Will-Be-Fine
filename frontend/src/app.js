@@ -133,6 +133,15 @@ function setState(next) {
   render();
 }
 
+function resizeTextareaToContent(textarea) {
+  textarea.style.height = "0px";
+  textarea.style.height = `${textarea.scrollHeight}px`;
+}
+
+function resizeDraftTextareas() {
+  app.querySelectorAll(".structured-draft textarea").forEach(resizeTextareaToContent);
+}
+
 function clearEditingState(next = {}) {
   return {
     editingRecordId: null,
@@ -1932,6 +1941,7 @@ function render() {
     detail: detailPage,
   };
   app.innerHTML = routes[state.route]();
+  resizeDraftTextareas();
   const nextWorkspace = app.querySelector(".workspace");
   if (nextWorkspace) nextWorkspace.scrollTop = scrollTop;
   if (activeField === "search") {
@@ -2465,6 +2475,10 @@ app.addEventListener("input", (event) => {
 
   if (event.target.matches("[data-draft-field]")) {
     state.draftFields[state.mode][event.target.dataset.draftField] = event.target.value;
+  }
+
+  if (event.target.matches(".structured-draft textarea")) {
+    resizeTextareaToContent(event.target);
   }
 
   if (event.target.matches("[data-auth-username]")) {
