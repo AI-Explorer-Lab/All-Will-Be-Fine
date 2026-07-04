@@ -106,6 +106,7 @@ let runtime = {
   error: "",
   passwordVisible: false,
   composing: false,
+  credentialAutofillRequested: false,
   loginDraft: {
     username: "",
     password: "",
@@ -168,6 +169,7 @@ function escapeHtml(value) {
 
 function render() {
   app.innerHTML = runtime.loggedIn ? dashboardView() : loginView();
+  if (!runtime.loggedIn) requestStoredMonitorCredential();
 }
 
 function loginView() {
@@ -181,12 +183,12 @@ function loginView() {
         ${markSvg()}
         <h1>系统监控中心</h1>
         <p class="subtitle">仅限管理员访问</p>
-        <form class="login-card" data-login-form>
+        <form class="login-card" data-login-form method="post" action="${escapeHtml(`${runtime.apiBase}/monitor/login`)}" autocomplete="on">
           <label class="field">用户名
-            <span class="input-row">${icons.user}<input name="username" autocomplete="username" value="${escapeHtml(runtime.loginDraft.username)}" placeholder="请输入管理员账号" /></span>
+            <span class="input-row">${icons.user}<input id="monitor-username" name="username" type="text" inputmode="text" autocomplete="username" autocapitalize="none" spellcheck="false" required value="${escapeHtml(runtime.loginDraft.username)}" placeholder="请输入管理员账号" /></span>
           </label>
           <label class="field">密码
-            <span class="input-row">${icons.lock}<input name="password" autocomplete="current-password" type="${runtime.passwordVisible ? "text" : "password"}" value="${escapeHtml(runtime.loginDraft.password)}" placeholder="请输入管理员密码" /><button class="reveal-button" type="button" data-reveal aria-label="显示或隐藏密码">${icons.eye}</button></span>
+            <span class="input-row">${icons.lock}<input id="monitor-password" name="password" autocomplete="current-password" required type="${runtime.passwordVisible ? "text" : "password"}" value="${escapeHtml(runtime.loginDraft.password)}" placeholder="请输入管理员密码" /><button class="reveal-button" type="button" data-reveal aria-label="显示或隐藏密码">${icons.eye}</button></span>
           </label>
           <div class="login-options">
             <label class="checkbox"><input type="checkbox" name="remember" ${runtime.loginDraft.remember ? "checked" : ""} />保持登录</label>
@@ -586,6 +588,35 @@ function formatRecordDateTime(value) {
   return formatDateTime(parseMonitorDate(value));
 }
 
+async function storeBrowserCredential(form) {
+  if (!window.PasswordCredential || !navigator.credentials?.store) return;
+  try {
+    await navigator.credentials.store(new PasswordCredential(form));
+  } catch (_error) {
+    // Browser password saving is optional and may be disabled by the user or context.
+  }
+}
+
+async function requestStoredMonitorCredential() {
+  if (runtime.credentialAutofillRequested || !window.PasswordCredential || !navigator.credentials?.get) return;
+  runtime.credentialAutofillRequested = true;
+  try {
+    const credential = await navigator.credentials.get({ password: true, mediation: "optional" });
+    const form = app.querySelector("[data-login-form]");
+    if (!credential || !form || runtime.loggedIn) return;
+    if (credential.id) {
+      form.username.value = credential.id;
+      runtime.loginDraft.username = credential.id;
+    }
+    if (credential.password) {
+      form.password.value = credential.password;
+      runtime.loginDraft.password = credential.password;
+    }
+  } catch (_error) {
+    // Credential retrieval is a browser hint only; native autofill still works without it.
+  }
+}
+
 app.addEventListener("submit", async (event) => {
   const form = event.target.closest("[data-login-form]");
   if (!form) return;
@@ -604,6 +635,7 @@ app.addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify({ username, password }),
     });
+    await storeBrowserCredential(form);
     const serverTtlSeconds = Number(data.expires_in) || MONITOR_REMEMBER_TTL_SECONDS;
     const ttlSeconds = runtime.loginDraft.remember
       ? serverTtlSeconds
