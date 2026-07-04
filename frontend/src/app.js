@@ -59,6 +59,7 @@ const state = {
   authUser: safeJsonParse(localStorage.getItem(AUTH_USER_KEY), null),
   authMode: "login",
   authSubmitting: false,
+  credentialPrefillAttempted: false,
   authDraft: {
     username: "",
     password: "",
@@ -265,7 +266,7 @@ async function submitAuthForm(form = app.querySelector("[data-auth-form]")) {
       auth: false,
       body: JSON.stringify({ username, password }),
     });
-    await storeBrowserCredential(form);
+    await storeBrowserCredential(form, username, password);
     setAuthSession(data);
     state.authDraft.password = "";
     setState({ authSubmitting: false, apiOnline: true, route: "home", tab: "review" });
@@ -290,12 +291,46 @@ function setAuthFormBusy(form, busy) {
   }
 }
 
-async function storeBrowserCredential(form) {
-  if (!window.PasswordCredential || !navigator.credentials?.store) return;
+async function storeBrowserCredential(form, username = "", password = "") {
+  if (!window.isSecureContext || !window.PasswordCredential || !navigator.credentials?.store) return;
+  const id = String(username || form?.querySelector("[data-auth-username]")?.value || "").trim();
+  const secret = String(password || form?.querySelector("[data-auth-password]")?.value || "");
+  if (!id || !secret) return;
   try {
-    await navigator.credentials.store(new PasswordCredential(form));
+    await navigator.credentials.store(new PasswordCredential({ id, name: id, password: secret }));
   } catch (_error) {
-    // Browser password saving is optional and may be disabled by the user or context.
+    try {
+      await navigator.credentials.store(new PasswordCredential(form));
+    } catch (_fallbackError) {
+      // Browser password saving is optional and may be disabled by the user or context.
+    }
+  }
+}
+
+async function maybePrefillBrowserCredential() {
+  if (
+    state.authMode !== "login"
+    || state.credentialPrefillAttempted
+    || !window.isSecureContext
+    || !window.PasswordCredential
+    || !navigator.credentials?.get
+  ) {
+    return;
+  }
+  state.credentialPrefillAttempted = true;
+  try {
+    const credential = await navigator.credentials.get({ password: true, mediation: "silent" });
+    if (!credential || credential.type !== "password") return;
+    const form = app.querySelector("[data-auth-form]");
+    const usernameInput = form?.querySelector("[data-auth-username]");
+    const passwordInput = form?.querySelector("[data-auth-password]");
+    if (!usernameInput || !passwordInput || usernameInput.value || passwordInput.value) return;
+    usernameInput.value = credential.id || credential.name || "";
+    passwordInput.value = credential.password || "";
+    state.authDraft.username = usernameInput.value;
+    state.authDraft.password = passwordInput.value;
+  } catch (_error) {
+    // Silent credential lookup should never block the normal login form.
   }
 }
 
@@ -1098,7 +1133,7 @@ function authPage() {
           ${theme === "dark" ? icons.sun : icons.moon}
         </button>
         <div class="brand auth-brand">${leafLogo()}<div><div class="brand-name">复盘</div></div></div>
-        <form class="auth-form" data-auth-form method="post" action="/api/auth/${isRegister ? "register" : "login"}" autocomplete="on">
+        <form id="auth-form" name="auth-form" class="auth-form" data-auth-form method="post" action="/api/auth/${isRegister ? "register" : "login"}" autocomplete="on">
           <h1>${isRegister ? "创建账号" : "登录账号"}</h1>
           <p>登录后才能使用复盘、方法库和校准功能。</p>
           <label for="auth-username">账号<input id="auth-username" name="username" data-auth-username type="text" inputmode="text" autocomplete="username" autocapitalize="none" spellcheck="false" required value="${escapeHtml(state.authDraft.username)}" placeholder="${isRegister ? "例如 zhangsan" : ""}" /></label>
@@ -1190,18 +1225,18 @@ function structuredDraftForm(mode) {
   const fields = currentDraftFields();
   const mainLabel = mode === "event" ? "发生了什么" : "我在担心什么";
   const mainPlaceholder = mode === "event"
-    ? "把事情本身写清楚：背景、你做了什么、结果是什么。支持 Markdown。"
-    : "把担心本身写清楚：你在担心什么，它从哪里开始。支持 Markdown。";
+    ? "把事情本身写清楚：背景、你做了什么、结果是什么。"
+    : "把担心本身写清楚：你在担心什么，它从哪里开始。";
   const extraFields = mode === "event"
     ? [
-        ["improvement", "需要改进的地方", "这次哪里可以做得更好？支持 **重点**、列表和代码。"],
-        ["next", "下次怎么做", "支持 Markdown 列表，例如：- 先确认目标和边界"],
-        ["reminder", "提醒自己", "写一句下次能提醒自己的话，支持 Markdown。"],
+        ["improvement", "需要改进的地方", "这次哪里可以做得更好？"],
+        ["next", "下次怎么做", "一行一个动作，例如：先确认目标和边界"],
+        ["reminder", "提醒自己", "写一句下次能提醒自己的话"],
       ]
     : [
-        ["reality", "现实检查", "哪些证据支持/不支持这个担心？支持 **重点**、列表和代码。"],
-        ["action", "我能做什么", "支持 Markdown 列表，例如：- 准备 3 个高频问题"],
-        ["reminder", "提醒自己", "写一句能把自己拉回行动的话，支持 Markdown。"],
+        ["reality", "现实检查", "哪些证据支持/不支持这个担心？"],
+        ["action", "我能做什么", "一行一个可控动作，例如：准备 3 个高频问题"],
+        ["reminder", "提醒自己", "写一句能把自己拉回行动的话"],
       ];
   return `
     <div class="structured-draft">
@@ -2051,6 +2086,7 @@ function render() {
   if (!state.authToken) {
     app.classList.add("auth-shell");
     app.innerHTML = authPage();
+    window.queueMicrotask(maybePrefillBrowserCredential);
     return;
   }
   app.classList.remove("auth-shell");
@@ -2338,7 +2374,7 @@ app.addEventListener("click", async (event) => {
   }
 
   if (target.dataset.authMode) {
-    setState({ authMode: target.dataset.authMode });
+    setState({ authMode: target.dataset.authMode, credentialPrefillAttempted: false });
     return;
   }
 
