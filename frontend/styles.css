@@ -1402,12 +1402,89 @@ button:active {
 
 .field-card p,
 .field-card ol,
+.field-card ul,
+.field-card blockquote,
+.field-card pre,
+.field-card h4,
+.field-card h5,
 .list-card p,
-.list-card ol {
+.list-card ol,
+.list-card ul {
   margin: 0;
   color: #584438;
   line-height: 1.8;
   font-size: 15px;
+}
+
+.field-card p + p,
+.field-card p + ul,
+.field-card p + ol,
+.field-card ul + p,
+.field-card ol + p,
+.field-card blockquote + p,
+.field-card pre + p {
+  margin-top: 8px;
+}
+
+.field-card ul,
+.field-card ol,
+.list-card ul,
+.list-card ol {
+  padding-left: 22px;
+}
+
+.field-card li + li,
+.list-card li + li {
+  margin-top: 4px;
+}
+
+.field-card h4,
+.field-card h5 {
+  margin: 12px 0 6px;
+  color: #3d2d23;
+  line-height: 1.45;
+}
+
+.field-card blockquote {
+  padding: 8px 12px;
+  border-left: 3px solid var(--orange);
+  background: oklch(0.964 0.024 76 / 0.72);
+}
+
+.field-card blockquote p + p {
+  margin-top: 6px;
+}
+
+.field-card code,
+.list-card code {
+  padding: 2px 5px;
+  border: 1px solid oklch(0.864 0.026 76);
+  border-radius: 5px;
+  color: oklch(0.39 0.075 48);
+  background: oklch(0.973 0.02 78);
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 0.92em;
+}
+
+.field-card pre {
+  overflow-x: auto;
+  padding: 12px 14px;
+  border: 1px solid oklch(0.864 0.026 76);
+  border-radius: 8px;
+  background: oklch(0.245 0.019 66);
+}
+
+.field-card pre code {
+  padding: 0;
+  border: 0;
+  color: oklch(0.93 0.018 78);
+  background: transparent;
+}
+
+.field-card a,
+.list-card a {
+  color: var(--orange-dark);
+  font-weight: 800;
 }
 
 .assisted-field {
@@ -1442,12 +1519,17 @@ button:active {
 }
 
 .field-source.ai-source p,
-.field-source.ai-source ol {
+.field-source.ai-source ol,
+.field-source.ai-source ul,
+.field-source.ai-source blockquote {
   color: oklch(0.39 0.045 54);
 }
 
 .detail-page .field-card p,
-.detail-page .field-card ol {
+.detail-page .field-card ol,
+.detail-page .field-card ul,
+.detail-page .field-card blockquote,
+.detail-page .field-card pre {
   max-width: 68ch;
   font-size: 16px;
   line-height: 1.86;
@@ -1991,12 +2073,38 @@ button:active {
 :root[data-theme="dark"] .week-panel p,
 :root[data-theme="dark"] .field-card p,
 :root[data-theme="dark"] .field-card ol,
+:root[data-theme="dark"] .field-card ul,
+:root[data-theme="dark"] .field-card blockquote,
+:root[data-theme="dark"] .field-card h4,
+:root[data-theme="dark"] .field-card h5,
 :root[data-theme="dark"] .list-card p,
 :root[data-theme="dark"] .list-card ol,
+:root[data-theme="dark"] .list-card ul,
 :root[data-theme="dark"] .record-preview-item p,
 :root[data-theme="dark"] .record-preview-item ol,
 :root[data-theme="dark"] .detail-hero span {
   color: var(--muted);
+}
+
+:root[data-theme="dark"] .field-card blockquote {
+  background: oklch(0.3 0.03 66 / 0.62);
+}
+
+:root[data-theme="dark"] .field-card code,
+:root[data-theme="dark"] .list-card code {
+  color: oklch(0.84 0.06 62);
+  background: oklch(0.2 0.017 62);
+  border-color: var(--line);
+}
+
+:root[data-theme="dark"] .field-card pre {
+  background: oklch(0.14 0.016 62);
+  border-color: var(--line);
+}
+
+:root[data-theme="dark"] .field-card pre code {
+  color: oklch(0.91 0.018 78);
+  background: transparent;
 }
 
 :root[data-theme="dark"] .field-source + .field-source {

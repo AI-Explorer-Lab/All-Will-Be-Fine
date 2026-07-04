@@ -753,8 +753,22 @@ function applyDraftVerificationDate(bundle) {
 function splitLines(value) {
   return String(value || "")
     .split(/\r?\n/)
-    .map((item) => item.trim())
+    .map(stripMarkdownListMarker)
     .filter(Boolean);
+}
+
+function stripMarkdownListMarker(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^[-*+]\s+/, "")
+    .replace(/^\d+[.)]\s+/, "")
+    .trim();
+}
+
+function hasDraftValue(value) {
+  return Array.isArray(value)
+    ? value.some((item) => String(item || "").trim())
+    : Boolean(String(value || "").trim());
 }
 
 function composeDraftFields() {
@@ -764,18 +778,18 @@ function composeDraftFields() {
     ? [
         ["发生了什么", base],
         ["需要改进的地方", fields.improvement],
-        ["下次怎么做", fields.next],
+        ["下次怎么做", splitLines(fields.next)],
         ["提醒自己", fields.reminder],
       ]
     : [
         ["我在担心什么", base],
         ["现实检查", fields.reality],
-        ["我能做什么", fields.action],
+        ["我能做什么", splitLines(fields.action)],
         ["提醒自己", fields.reminder],
       ];
   return Object.fromEntries(lines
-    .filter(([, value]) => String(value || "").trim())
-    .map(([label, value]) => [label, String(value).trim()]));
+    .filter(([, value]) => hasDraftValue(value))
+    .map(([label, value]) => [label, Array.isArray(value) ? value : String(value).trim()]));
 }
 
 function buildLocalBundle(rawInput, mode, scene) {
@@ -995,7 +1009,7 @@ function editableFields(object, fallback) {
 function parseEditableValue(value, originalValue) {
   const effective = effectiveFieldValue(originalValue);
   if (!Array.isArray(effective)) return value.trim();
-  return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+  return splitLines(value);
 }
 
 function shell(content) {
@@ -1176,18 +1190,18 @@ function structuredDraftForm(mode) {
   const fields = currentDraftFields();
   const mainLabel = mode === "event" ? "发生了什么" : "我在担心什么";
   const mainPlaceholder = mode === "event"
-    ? "把事情本身写清楚：背景、你做了什么、结果是什么。"
-    : "把担心本身写清楚：你在担心什么，它从哪里开始。";
+    ? "把事情本身写清楚：背景、你做了什么、结果是什么。支持 Markdown。"
+    : "把担心本身写清楚：你在担心什么，它从哪里开始。支持 Markdown。";
   const extraFields = mode === "event"
     ? [
-        ["improvement", "需要改进的地方", "这次哪里可以做得更好？"],
-        ["next", "下次怎么做", "一行一个动作，例如：先确认目标和边界"],
-        ["reminder", "提醒自己", "写一句下次能提醒自己的话"],
+        ["improvement", "需要改进的地方", "这次哪里可以做得更好？支持 **重点**、列表和代码。"],
+        ["next", "下次怎么做", "支持 Markdown 列表，例如：- 先确认目标和边界"],
+        ["reminder", "提醒自己", "写一句下次能提醒自己的话，支持 Markdown。"],
       ]
     : [
-        ["reality", "现实检查", "哪些证据支持/不支持这个担心？"],
-        ["action", "我能做什么", "一行一个可控动作，例如：准备 3 个高频问题"],
-        ["reminder", "提醒自己", "写一句能把自己拉回行动的话"],
+        ["reality", "现实检查", "哪些证据支持/不支持这个担心？支持 **重点**、列表和代码。"],
+        ["action", "我能做什么", "支持 Markdown 列表，例如：- 准备 3 个高频问题"],
+        ["reminder", "提醒自己", "写一句能把自己拉回行动的话，支持 Markdown。"],
       ];
   return `
     <div class="structured-draft">
@@ -1411,7 +1425,7 @@ function fieldGrid(fields, numbered = false) {
     <div class="field-grid">
       ${fields.map(([label, value], index) => {
         const body = fieldBody(value);
-        return `<article class="field-card">${numbered ? `<span class="number">${index + 1}</span>` : ""}<h3>${label}</h3>${body}</article>`;
+        return `<article class="field-card">${numbered ? `<span class="number">${index + 1}</span>` : ""}<h3>${escapeHtml(label)}</h3>${body}</article>`;
       }).join("")}
     </div>
   `;
@@ -1445,13 +1459,10 @@ function fieldBody(value) {
 
 function basicFieldBody(value) {
   if (Array.isArray(value)) {
-    return `<ol>${value.map((item) => `<li>${escapeHtml(displayValue(item))}</li>`).join("")}</ol>`;
+    return `<ol>${value.map((item) => `<li>${renderInlineMarkdown(displayValue(item))}</li>`).join("")}</ol>`;
   }
   const text = displayValue(value);
-  return text
-    .split("\n")
-    .map((line) => `<p>${escapeHtml(line)}</p>`)
-    .join("");
+  return renderMarkdown(text);
 }
 
 function isAssistedField(value) {
@@ -1474,6 +1485,127 @@ function displayValue(value) {
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function renderMarkdown(value) {
+  const text = String(value || "").replace(/\r\n/g, "\n").trim();
+  if (!text) return "<p></p>";
+
+  const html = [];
+  const paragraph = [];
+  let list = null;
+  let quoteLines = [];
+  let inCodeBlock = false;
+  let codeLanguage = "";
+  let codeLines = [];
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    html.push(`<p>${renderInlineMarkdown(paragraph.join("\n"))}</p>`);
+    paragraph.length = 0;
+  };
+  const flushList = () => {
+    if (!list) return;
+    html.push(`<${list.type}>${list.items.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</${list.type}>`);
+    list = null;
+  };
+  const flushQuote = () => {
+    if (!quoteLines.length) return;
+    html.push(`<blockquote>${quoteLines.map((line) => `<p>${renderInlineMarkdown(line)}</p>`).join("")}</blockquote>`);
+    quoteLines = [];
+  };
+  const flushBlocks = () => {
+    flushParagraph();
+    flushList();
+    flushQuote();
+  };
+
+  text.split("\n").forEach((line) => {
+    const fence = line.match(/^```([a-z0-9_-]*)\s*$/i);
+    if (fence) {
+      if (inCodeBlock) {
+        const languageClass = codeLanguage ? ` class="language-${escapeHtml(codeLanguage)}"` : "";
+        html.push(`<pre><code${languageClass}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+        inCodeBlock = false;
+        codeLanguage = "";
+        codeLines = [];
+      } else {
+        flushBlocks();
+        inCodeBlock = true;
+        codeLanguage = fence[1] || "";
+      }
+      return;
+    }
+
+    if (inCodeBlock) {
+      codeLines.push(line);
+      return;
+    }
+
+    if (!line.trim()) {
+      flushBlocks();
+      return;
+    }
+
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      flushBlocks();
+      const level = Math.min(6, heading[1].length + 2);
+      html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+      return;
+    }
+
+    const quote = line.match(/^>\s?(.*)$/);
+    if (quote) {
+      flushParagraph();
+      flushList();
+      quoteLines.push(quote[1]);
+      return;
+    }
+
+    const unordered = line.match(/^\s*[-*+]\s+(.+)$/);
+    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (unordered || ordered) {
+      flushParagraph();
+      flushQuote();
+      const type = ordered ? "ol" : "ul";
+      if (!list || list.type !== type) flushList();
+      if (!list) list = { type, items: [] };
+      list.items.push((unordered || ordered)[1]);
+      return;
+    }
+
+    flushList();
+    flushQuote();
+    paragraph.push(line);
+  });
+
+  if (inCodeBlock) {
+    const languageClass = codeLanguage ? ` class="language-${escapeHtml(codeLanguage)}"` : "";
+    html.push(`<pre><code${languageClass}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+  }
+  flushBlocks();
+  return html.join("");
+}
+
+function renderInlineMarkdown(value) {
+  const codeTokens = [];
+  let html = escapeHtml(value).replace(/`([^`]+)`/g, (_match, code) => {
+    const token = `@@CODE${codeTokens.length}@@`;
+    codeTokens.push(`<code>${code}</code>`);
+    return token;
+  });
+  html = html.replace(/\[([^\]\n]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/g, (_match, label, href) => (
+    `<a href="${href}" target="_blank" rel="noreferrer noopener">${label}</a>`
+  ));
+  html = html.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
+  html = html.replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
+  html = html.replace(/\n/g, "<br />");
+  codeTokens.forEach((code, index) => {
+    html = html.replaceAll(`@@CODE${index}@@`, code);
+  });
+  return html;
 }
 
 function recordsPage() {
@@ -1743,8 +1875,8 @@ function methodCard(card) {
         </div>
       </div>
       <div class="method-tags">${card.scenes.map((scene) => `<span>${escapeHtml(scene)}</span>`).join("")}</div>
-      <strong>触发条件：${escapeHtml(card.trigger)}</strong>
-      <ol>${card.steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ol>
+      <strong>触发条件：${renderInlineMarkdown(card.trigger)}</strong>
+      <ol>${card.steps.map((step) => `<li>${renderInlineMarkdown(step)}</li>`).join("")}</ol>
       ${source ? `<p>来自：${escapeHtml(source)}</p>` : ""}
     </article>
   `;
