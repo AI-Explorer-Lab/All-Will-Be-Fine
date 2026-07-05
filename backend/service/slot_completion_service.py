@@ -406,11 +406,11 @@ def apply_provided_fields(
         }
     )
     primary_key = "我在担心什么" if review_type == ANXIETY_TYPE else "发生了什么"
-    for source_key, (target_key, as_list) in mapping.items():
+    for source_key, (target_key, _list_hint) in mapping.items():
         value = fields.get(source_key)
         if value in (None, "", []):
             continue
-        normalized = _provided_list(value) if as_list else str(value).strip()
+        normalized = _provided_text(value)
         assisted_value = {
             "user_content": normalized,
             "ai_suggestion": normalize_slot_value(ai_suggestions.get(source_key, "")),
@@ -434,8 +434,18 @@ def apply_provided_fields(
 
 def _provided_list(value: Any) -> list[str]:
     if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    return [item.strip() for item in str(value).splitlines() if item.strip()]
+        return [_strip_list_marker(str(item)) for item in value if str(item).strip()]
+    return [_strip_list_marker(item) for item in str(value).splitlines() if item.strip()]
+
+
+def _provided_text(value: Any) -> str:
+    if isinstance(value, list):
+        return "\n".join(str(item).strip() for item in value if str(item).strip())
+    return str(value).strip()
+
+
+def _strip_list_marker(value: str) -> str:
+    return re.sub(r"^\s*(?:[-*+]|\d+[.)])\s+", "", value).strip()
 
 
 def event_slots(raw_input: str, title: str, scene: str) -> dict[str, Any]:

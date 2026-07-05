@@ -792,6 +792,22 @@ function splitLines(value) {
     .filter(Boolean);
 }
 
+function markdownText(value) {
+  return String(value || "").trim();
+}
+
+function hasMarkdownListMarker(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .some((line) => /^\s*(?:[-*+]|\d+[.)])\s+/.test(line));
+}
+
+function editableMultilineValue(value) {
+  const effective = effectiveFieldValue(value);
+  if (Array.isArray(effective)) return effective.join("\n");
+  return String(effective || "");
+}
+
 function stripMarkdownListMarker(value) {
   return String(value || "")
     .trim()
@@ -813,13 +829,13 @@ function composeDraftFields() {
     ? [
         ["发生了什么", base],
         ["需要改进的地方", fields.improvement],
-        ["下次怎么做", splitLines(fields.next)],
+        ["下次怎么做", markdownText(fields.next)],
         ["提醒自己", fields.reminder],
       ]
     : [
         ["我在担心什么", base],
         ["现实检查", fields.reality],
-        ["我能做什么", splitLines(fields.action)],
+        ["我能做什么", markdownText(fields.action)],
         ["提醒自己", fields.reminder],
       ];
   return Object.fromEntries(lines
@@ -889,36 +905,38 @@ function buildLocalBundle(rawInput, mode, scene) {
 function buildManualBundle(rawInput, mode, scene, fields = currentDraftFields()) {
   const bundle = buildLocalBundle(rawInput, mode, scene);
   if (mode === "event") {
-    const nextSteps = splitLines(fields.next);
+    const nextText = markdownText(fields.next);
+    const nextSteps = splitLines(nextText);
     const improvement = fields.improvement.trim();
     const reminder = fields.reminder.trim();
     bundle.record.summary = {
       发生了什么: rawInput,
       需要改进的地方: improvement,
-      下次怎么做: nextSteps,
+      下次怎么做: nextText || bundle.record.summary.下次怎么做,
       提醒自己: reminder,
     };
     bundle.record.resultCard = {
       需要改进的地方: improvement,
-      下次怎么做: nextSteps,
+      下次怎么做: nextText || bundle.record.resultCard.下次怎么做,
       提醒自己: reminder,
     };
     if (bundle.methodCard) {
-      bundle.methodCard.steps = nextSteps;
-      bundle.methodCard.trigger = improvement;
-      bundle.methodCard.reminder = reminder;
+      if (nextSteps.length) bundle.methodCard.steps = nextSteps;
+      if (improvement) bundle.methodCard.trigger = improvement;
+      if (reminder) bundle.methodCard.reminder = reminder;
     }
   } else {
-    const actionSteps = splitLines(fields.action);
+    const actionText = markdownText(fields.action);
+    const actionSteps = splitLines(actionText);
     const reminder = fields.reminder.trim();
     bundle.record.summary = {
       我在担心什么: rawInput,
       现实检查: fields.reality.trim(),
-      我能做什么: actionSteps,
+      我能做什么: actionText || bundle.record.summary.我能做什么,
       提醒自己: reminder,
     };
     bundle.record.resultCard = {
-      我能做什么: actionSteps,
+      我能做什么: actionText || bundle.record.resultCard.我能做什么,
       提醒自己: reminder,
     };
     if (bundle.calibrationCard) {
@@ -951,13 +969,14 @@ function findMethodForRecord(record) {
 
 function createMethodFromRecord(record) {
   const steps = effectiveFieldValue(record.resultCard?.下次怎么做 || record.resultCard?.["下次怎么做"] || []);
+  const parsedSteps = Array.isArray(steps) ? steps : splitLines(steps);
   const method = normalizeMethod({
     id: `local-method-${Date.now()}`,
     sourceReviewId: record.id,
     title: `${record.title.slice(0, 14)}方法卡`,
     scenes: [record.scene],
     trigger: effectiveFieldValue(record.summary?.需要改进的地方) || "再次遇到类似情况前",
-    steps: Array.isArray(steps) && steps.length ? steps : ["复述当前情况", "确认目标和边界", "列出下一步行动"],
+    steps: parsedSteps.length ? parsedSteps : ["复述当前情况", "确认目标和边界", "列出下一步行动"],
     source: record.title,
     createdAt: localDateTimeKey(),
     updatedAt: localDateTimeKey(),
@@ -1036,14 +1055,14 @@ function syncFieldValue(oldValue, newValue) {
 
 function editableFields(object, fallback) {
   return objectFields(object, fallback).map(([label, value]) => {
-    const effective = effectiveFieldValue(value);
-    return [label, Array.isArray(effective) ? effective : String(effective || "")];
+    return [label, editableMultilineValue(value)];
   });
 }
 
 function parseEditableValue(value, originalValue) {
   const effective = effectiveFieldValue(originalValue);
-  if (!Array.isArray(effective)) return value.trim();
+  if (!Array.isArray(effective)) return markdownText(value);
+  if (hasMarkdownListMarker(value)) return markdownText(value);
   return splitLines(value);
 }
 
@@ -1541,7 +1560,15 @@ function renderMarkdown(value) {
   };
   const flushList = () => {
     if (!list) return;
-    html.push(`<${list.type}>${list.items.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</${list.type}>`);
+    const classAttr = list.task ? ` class="task-list"` : "";
+    const items = list.items.map((item) => {
+      if (item && typeof item === "object") {
+        const checked = item.checked ? " checked" : "";
+        return `<li><input type="checkbox" disabled${checked} aria-label="${item.checked ? "已完成" : "未完成"}" /><span>${renderInlineMarkdown(item.text)}</span></li>`;
+      }
+      return `<li>${renderInlineMarkdown(item)}</li>`;
+    }).join("");
+    html.push(`<${list.type}${classAttr}>${items}</${list.type}>`);
     list = null;
   };
   const flushQuote = () => {
@@ -1555,7 +1582,34 @@ function renderMarkdown(value) {
     flushQuote();
   };
 
-  text.split("\n").forEach((line) => {
+  const splitTableRow = (line) => line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+  const isTableSeparator = (line) => /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+  const isTableStart = (lines, index) => (
+    index + 1 < lines.length
+    && lines[index].includes("|")
+    && isTableSeparator(lines[index + 1])
+  );
+  const renderTable = (tableLines) => {
+    const header = splitTableRow(tableLines[0]);
+    const rows = tableLines.slice(2).map(splitTableRow);
+    return `
+      <div class="markdown-table-wrap">
+        <table>
+          <thead><tr>${header.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("")}</tr></thead>
+          <tbody>${rows.map((row) => `<tr>${header.map((_, index) => `<td>${renderInlineMarkdown(row[index] || "")}</td>`).join("")}</tr>`).join("")}</tbody>
+        </table>
+      </div>
+    `;
+  };
+
+  const lines = text.split("\n");
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     const fence = line.match(/^```([a-z0-9_-]*)\s*$/i);
     if (fence) {
       if (inCodeBlock) {
@@ -1569,17 +1623,36 @@ function renderMarkdown(value) {
         inCodeBlock = true;
         codeLanguage = fence[1] || "";
       }
-      return;
+      continue;
     }
 
     if (inCodeBlock) {
       codeLines.push(line);
-      return;
+      continue;
     }
 
     if (!line.trim()) {
       flushBlocks();
-      return;
+      continue;
+    }
+
+    if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      flushBlocks();
+      html.push("<hr />");
+      continue;
+    }
+
+    if (isTableStart(lines, index)) {
+      flushBlocks();
+      const tableLines = [line, lines[index + 1]];
+      index += 2;
+      while (index < lines.length && lines[index].includes("|") && lines[index].trim()) {
+        tableLines.push(lines[index]);
+        index += 1;
+      }
+      index -= 1;
+      html.push(renderTable(tableLines));
+      continue;
     }
 
     const heading = line.match(/^(#{1,6})\s+(.+)$/);
@@ -1587,7 +1660,7 @@ function renderMarkdown(value) {
       flushBlocks();
       const level = Math.min(6, heading[1].length + 2);
       html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
-      return;
+      continue;
     }
 
     const quote = line.match(/^>\s?(.*)$/);
@@ -1595,25 +1668,27 @@ function renderMarkdown(value) {
       flushParagraph();
       flushList();
       quoteLines.push(quote[1]);
-      return;
+      continue;
     }
 
+    const task = line.match(/^\s*[-*+]\s+\[([ xX])\]\s+(.+)$/);
     const unordered = line.match(/^\s*[-*+]\s+(.+)$/);
     const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
-    if (unordered || ordered) {
+    if (task || unordered || ordered) {
       flushParagraph();
       flushQuote();
       const type = ordered ? "ol" : "ul";
-      if (!list || list.type !== type) flushList();
-      if (!list) list = { type, items: [] };
-      list.items.push((unordered || ordered)[1]);
-      return;
+      const taskList = Boolean(task);
+      if (!list || list.type !== type || Boolean(list.task) !== taskList) flushList();
+      if (!list) list = { type, task: taskList, items: [] };
+      list.items.push(task ? { checked: task[1].toLowerCase() === "x", text: task[2] } : (unordered || ordered)[1]);
+      continue;
     }
 
     flushList();
     flushQuote();
     paragraph.push(line);
-  });
+  }
 
   if (inCodeBlock) {
     const languageClass = codeLanguage ? ` class="language-${escapeHtml(codeLanguage)}"` : "";
@@ -1630,9 +1705,13 @@ function renderInlineMarkdown(value) {
     codeTokens.push(`<code>${code}</code>`);
     return token;
   });
+  html = html.replace(/!\[([^\]\n]*)\]\(((?:https?:\/\/)[^\s)]+)\)/g, (_match, alt, src) => (
+    `<img src="${src}" alt="${alt}" loading="lazy" />`
+  ));
   html = html.replace(/\[([^\]\n]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/g, (_match, label, href) => (
     `<a href="${href}" target="_blank" rel="noreferrer noopener">${label}</a>`
   ));
+  html = html.replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
   html = html.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
   html = html.replace(/\*([^*\n]+)\*/g, "<em>$1</em>");

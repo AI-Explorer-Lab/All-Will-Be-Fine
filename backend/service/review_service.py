@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from uuid import uuid4
 
@@ -210,10 +211,14 @@ def _now_iso() -> str:
 
 def _as_list(value) -> list[str]:
     if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
+        return [_strip_list_marker(str(item)) for item in value if str(item).strip()]
     if isinstance(value, str):
-        return [item.strip() for item in value.replace("，", "\n").replace("、", "\n").splitlines() if item.strip()]
+        return [_strip_list_marker(item) for item in value.replace("，", "\n").replace("、", "\n").splitlines() if item.strip()]
     return []
+
+
+def _strip_list_marker(value: str) -> str:
+    return re.sub(r"^\s*(?:[-*+]|\d+[.)])\s+", "", value).strip()
 
 
 COMPACT_RECORD_FIELDS = {

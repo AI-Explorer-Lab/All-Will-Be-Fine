@@ -1433,6 +1433,30 @@ button:active {
   padding-left: 22px;
 }
 
+.field-card .task-list,
+.list-card .task-list {
+  display: grid;
+  gap: 8px;
+  padding-left: 0;
+  list-style: none;
+}
+
+.field-card .task-list li,
+.list-card .task-list li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.field-card .task-list input,
+.list-card .task-list input {
+  width: 15px;
+  height: 15px;
+  margin: 4px 0 0;
+  accent-color: var(--orange);
+}
+
 .field-card li + li,
 .list-card li + li {
   margin-top: 4px;
@@ -1464,6 +1488,69 @@ button:active {
   background: oklch(0.973 0.02 78);
   font-family: "Cascadia Mono", "Consolas", monospace;
   font-size: 0.92em;
+}
+
+.field-card del,
+.list-card del {
+  color: var(--muted);
+}
+
+.field-card hr,
+.list-card hr {
+  width: 100%;
+  height: 1px;
+  margin: 16px 0;
+  border: 0;
+  background: var(--line);
+}
+
+.field-card img,
+.list-card img {
+  display: block;
+  max-width: min(100%, 520px);
+  height: auto;
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.markdown-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.field-card table,
+.list-card table {
+  width: 100%;
+  min-width: 360px;
+  margin: 12px 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-collapse: collapse;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.field-card th,
+.field-card td,
+.list-card th,
+.list-card td {
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.field-card th,
+.list-card th {
+  color: var(--ink);
+  background: var(--orange-soft);
+  font-weight: 800;
+}
+
+.field-card tr:last-child td,
+.list-card tr:last-child td {
+  border-bottom: 0;
 }
 
 .field-card pre {
@@ -1663,14 +1750,16 @@ button:active {
 }
 
 .record-preview-item p,
-.record-preview-item ol {
+.record-preview-item ol,
+.record-preview-item ul {
   margin: 0;
   color: #4e3a31;
   font-size: 14px;
   line-height: 1.65;
 }
 
-.record-preview-item ol {
+.record-preview-item ol,
+.record-preview-item ul {
   padding-left: 20px;
 }
 
@@ -2082,12 +2171,35 @@ button:active {
 :root[data-theme="dark"] .list-card ul,
 :root[data-theme="dark"] .record-preview-item p,
 :root[data-theme="dark"] .record-preview-item ol,
+:root[data-theme="dark"] .record-preview-item ul,
 :root[data-theme="dark"] .detail-hero span {
   color: var(--muted);
 }
 
 :root[data-theme="dark"] .field-card blockquote {
   background: oklch(0.3 0.03 66 / 0.62);
+}
+
+:root[data-theme="dark"] .field-card hr,
+:root[data-theme="dark"] .list-card hr {
+  background: var(--line);
+}
+
+:root[data-theme="dark"] .field-card img,
+:root[data-theme="dark"] .list-card img,
+:root[data-theme="dark"] .field-card table,
+:root[data-theme="dark"] .list-card table,
+:root[data-theme="dark"] .field-card th,
+:root[data-theme="dark"] .field-card td,
+:root[data-theme="dark"] .list-card th,
+:root[data-theme="dark"] .list-card td {
+  border-color: var(--line);
+}
+
+:root[data-theme="dark"] .field-card th,
+:root[data-theme="dark"] .list-card th {
+  color: var(--ink);
+  background: oklch(0.32 0.055 50);
 }
 
 :root[data-theme="dark"] .field-card code,
