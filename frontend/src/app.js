@@ -1629,7 +1629,7 @@ function displayValue(value) {
 }
 
 function renderMarkdown(value) {
-  const text = String(value || "").replace(/\r\n/g, "\n").trim();
+  const text = normalizeInlineOrderedLists(String(value || "").replace(/\r\n/g, "\n")).trim();
   if (!text) return "<p></p>";
 
   const html = [];
@@ -1785,6 +1785,17 @@ function renderMarkdown(value) {
   return html.join("");
 }
 
+function normalizeInlineOrderedLists(value) {
+  return String(value || "")
+    .split("\n")
+    .map((line) => (
+      /^\s*1[.)]\s+/.test(line)
+        ? line.replace(/\s+((?:[2-9]|[1-9]\d+)[.)]\s+)/g, "\n$1")
+        : line
+    ))
+    .join("\n");
+}
+
 function renderInlineMarkdown(value) {
   const codeTokens = [];
   let html = escapeHtml(value).replace(/`([^`]+)`/g, (_match, code) => {
@@ -1848,7 +1859,9 @@ function methodsPage() {
     }
   }
   const filters = ["全部", ...fixedSceneTags("event")];
-  const filtered = store.methods.filter((card) => (state.filter === "全部" || card.scenes.includes(state.filter)) && matchesQuery([card.title, card.trigger, methodSourceLabel(card)]));
+  const filtered = store.methods.filter((card) => (
+    state.filter === "全部" || card.scenes.includes(state.filter)
+  ) && matchesQuery([card.title, ...card.scenes, methodSourceLabel(card), ...card.steps]));
   return shell(`
     <main class="content-page library-page methods-library-page">
       ${pageIntro("方法库", "沉淀有效方法，在未来的类似场景中复用")}
@@ -2085,7 +2098,7 @@ function fieldSection(label, value, options = {}) {
 }
 
 function textSection(label, value, options = {}) {
-  return librarySection(label, `<p>${escapeHtml(displayValue(value) || "未填写")}</p>`, options);
+  return librarySection(label, renderMarkdown(displayValue(value) || "未填写"), options);
 }
 
 function statusPill(status) {
@@ -2167,7 +2180,6 @@ function methodCard(card) {
       </div>
       <div class="record-preview library-card-sections">
         ${textSection("适用场景", source ? `从「${source}」这类场景中复用。` : `${card.scenes.join("、") || "类似情况"}中复用。`)}
-        ${fieldSection("触发条件", card.trigger || "遇到类似情况前")}
         ${librarySection("行动步骤", methodStepChips(card.steps))}
       </div>
       ${methodSourceFooter(source, card.updatedAt || card.createdAt)}
@@ -2196,7 +2208,6 @@ function methodEditCard(card) {
     <article class="list-card method-card method-editor" data-method-editor="${card.id}">
       <label>方法名<input data-method-title value="${escapeHtml(card.title)}" /></label>
       <label>标签${methodSceneSelect(card)}</label>
-      <label>触发条件<textarea data-method-trigger>${escapeHtml(card.trigger)}</textarea></label>
       <label>行动步骤<textarea data-method-steps>${escapeHtml(card.steps.join("\n"))}</textarea></label>
       <div class="action-row compact">
         <button class="primary-button" data-save-method="${card.id}">保存</button>
@@ -2408,7 +2419,6 @@ async function saveMethodCard(id) {
   if (!editor || !card) return;
 
   const title = editor.querySelector("[data-method-title]").value.trim();
-  const trigger = editor.querySelector("[data-method-trigger]").value.trim();
   const steps = editor.querySelector("[data-method-steps]").value
     .split(/\r?\n/)
     .map((step) => step.trim())
@@ -2419,7 +2429,7 @@ async function saveMethodCard(id) {
   Object.assign(card, {
     title: title || card.title,
     scenes: [scene],
-    trigger: trigger || card.trigger,
+    trigger: card.trigger || "",
     steps: steps.length ? steps : card.steps,
     updatedAt: localDateTimeKey(),
   });

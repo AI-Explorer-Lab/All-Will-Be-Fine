@@ -2142,10 +2142,6 @@ button:active {
   resize: vertical;
 }
 
-.method-editor textarea[data-method-trigger] {
-  min-height: 150px;
-}
-
 .method-editor textarea[data-method-steps] {
   min-height: 260px;
 }
