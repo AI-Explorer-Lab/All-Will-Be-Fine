@@ -1900,20 +1900,26 @@ button:active {
   font-weight: 800;
 }
 
-.card-menu {
+.card-delete-button {
+  display: inline-grid;
   width: 34px;
   height: 34px;
+  place-items: center;
+  border: 1px solid transparent;
   border-radius: 8px;
-  color: oklch(0.42 0.032 62);
-  background: transparent;
-  font-size: 24px;
-  font-weight: 900;
-  line-height: 1;
+  color: #9b2f1f;
+  background: #fff0ed;
 }
 
-.card-menu:hover {
-  color: var(--orange-dark);
-  background: oklch(0.966 0.027 58 / 0.78);
+.card-delete-button:hover {
+  color: #8a2719;
+  border-color: #e0a093;
+  background: #ffe5df;
+}
+
+.card-delete-button svg {
+  width: 20px;
+  height: 20px;
 }
 
 .inline-actions {

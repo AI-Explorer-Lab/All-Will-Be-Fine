@@ -115,6 +115,7 @@ const icons = {
   search: `<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m16.1 16.1 3.9 3.9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
   bell: `<svg viewBox="0 0 24 24"><path d="M18 10.4a6 6 0 0 0-12 0v4.1l-1.8 2h15.6l-1.8-2zM9.8 19.5h4.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   chevron: `<svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  trash: `<svg viewBox="0 0 24 24"><path d="M9 4.8h6M10 4.8l.6-1.3h2.8l.6 1.3M6.4 7.2h11.2M8 7.2l.7 12h6.6l.7-12M10.6 10.2v6M13.4 10.2v6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   back: `<svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   moon: `<svg viewBox="0 0 24 24"><path d="M19.4 15.1A7.4 7.4 0 0 1 8.9 4.6a7.8 7.8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`,
   sun: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.8" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 3.6v2M12 18.4v2M4.5 4.5l1.4 1.4M18.1 18.1l1.4 1.4M3.6 12h2M18.4 12h2M4.5 19.5l1.4-1.4M18.1 5.9l1.4-1.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
@@ -2120,7 +2121,7 @@ function recordCard(record) {
         </div>
         <div class="library-card-tools">
           <p class="record-meta">${cardMeta([displayDate(record.date, { full: true }), record.scene])}</p>
-          <button class="card-menu danger-text" data-delete-record="${record.id}" aria-label="删除记录">⋮</button>
+          <button class="card-delete-button danger-text" data-delete-record="${record.id}" aria-label="删除记录" title="删除记录">${icons.trash}</button>
         </div>
       </div>
       <div class="record-preview library-card-sections">
@@ -2161,7 +2162,7 @@ function methodCard(card) {
         </div>
         <div class="library-card-tools">
           <p class="record-meta">${cardMeta([card.scenes[0] || "其他"])}</p>
-          <button class="card-menu danger-text" data-delete-method="${card.id}" aria-label="删除方法">⋮</button>
+          <button class="card-delete-button danger-text" data-delete-method="${card.id}" aria-label="删除方法" title="删除方法">${icons.trash}</button>
         </div>
       </div>
       <div class="record-preview library-card-sections">
@@ -2554,7 +2555,18 @@ function localDeleteCalibration(id) {
   if (state.editingCalibrationId === id) state.editingCalibrationId = null;
 }
 
+function confirmDeleteResource(kind) {
+  const label = kind === "record" ? "这条记录" : kind === "method" ? "这张方法卡" : "这张校准卡";
+  const extra = kind === "record"
+    ? "删除记录也会移除它沉淀出的关联方法卡或校准卡。"
+    : kind === "calibration"
+      ? "删除校准卡也会移除对应记录。"
+      : "";
+  return window.confirm(`确定要删除${label}吗？${extra ? `\n${extra}` : ""}`);
+}
+
 async function deleteResource(kind, id) {
+  if (!confirmDeleteResource(kind)) return;
   const linkedRecord = kind === "calibration"
     ? findRecordForCalibration(store.calibrations.find((item) => item.id === id) || {}, id)
     : null;
