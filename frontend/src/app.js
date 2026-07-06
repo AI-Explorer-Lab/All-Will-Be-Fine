@@ -77,6 +77,36 @@ const navItems = [
   ["calibration", "校准", "gauge"],
 ];
 
+const routeByTab = {
+  review: "home",
+  records: "records",
+  methods: "methods",
+  calibration: "calibration",
+};
+
+const tabByRoute = {
+  home: "review",
+  records: "records",
+  methods: "methods",
+  calibration: "calibration",
+};
+
+const pathByTab = {
+  review: "/review",
+  records: "/records",
+  methods: "/methods",
+  calibration: "/calibration",
+};
+
+const tabByPath = {
+  "": "review",
+  "/": "review",
+  "/review": "review",
+  "/records": "records",
+  "/methods": "methods",
+  "/calibration": "calibration",
+};
+
 const icons = {
   home: `<svg viewBox="0 0 24 24"><path d="M4 11.3 12 4.8l8 6.5v7.4a1 1 0 0 1-1 1h-5.1v-5.2H10v5.2H5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`,
   note: `<svg viewBox="0 0 24 24"><rect x="6.5" y="4.8" width="11" height="14.4" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9.4 9h5.2M9.4 12h5.2M9.4 15h3.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
@@ -129,9 +159,48 @@ function defaultApiBase() {
   return `${origin}/api`;
 }
 
-function setState(next) {
+function appBasePath() {
+  const mountPath = "/all-will-be-fine";
+  return window.location.pathname.startsWith(mountPath) ? mountPath : "";
+}
+
+function normalizedAppPath() {
+  const base = appBasePath();
+  let path = window.location.pathname;
+  if (base && path.startsWith(base)) path = path.slice(base.length) || "/";
+  if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
+  return path;
+}
+
+function routeStateFromLocation() {
+  const tab = tabByPath[normalizedAppPath()] || "review";
+  return { tab, route: routeByTab[tab] };
+}
+
+function urlForTab(tab) {
+  return `${appBasePath()}${pathByTab[tab] || pathByTab.review}`;
+}
+
+function syncUrlForState(mode = "push") {
+  if (!window.history?.pushState) return;
+  const tab = tabByRoute[state.route] || state.tab || "review";
+  const nextUrl = urlForTab(tab);
+  if (window.location.pathname === nextUrl) return;
+  window.history[mode === "replace" ? "replaceState" : "pushState"]({ tab, route: routeByTab[tab] }, "", nextUrl);
+}
+
+function applyRouteFromLocation({ shouldRender = false } = {}) {
+  const next = routeStateFromLocation();
+  Object.assign(state, clearEditingState({ ...next, filter: "全部" }));
+  if (shouldRender) render();
+}
+
+function setState(next, options = {}) {
   Object.assign(state, next);
   render();
+  if (options.syncUrl !== false && ("route" in next || "tab" in next)) {
+    syncUrlForState(options.replaceUrl ? "replace" : "push");
+  }
 }
 
 function resizeTextareaToContent(textarea) {
@@ -757,7 +826,7 @@ function sceneSelect(currentScene, mode, attr = "data-record-scene") {
 }
 
 function methodSelectedTag(card) {
-  const options = fixedSceneTags();
+  const options = fixedSceneTags("event");
   const direct = (card.scenes || []).filter((scene) => options.includes(scene));
   if (direct.length) return direct[0];
   const sourceRecord = store.records.find((record) => record.id === card.sourceReviewId || record.title === card.source);
@@ -766,7 +835,7 @@ function methodSelectedTag(card) {
 }
 
 function methodSceneSelect(card) {
-  return sceneSelect(methodSelectedTag(card), "", "data-method-scene");
+  return sceneSelect(methodSelectedTag(card), "event", "data-method-scene");
 }
 
 function currentDraftFields() {
@@ -957,8 +1026,25 @@ function objectFields(object, fallback) {
   return entries.length ? entries : fallback;
 }
 
-function methodSourceLabel(source) {
-  const value = String(source || "").trim();
+function methodSourceRecord(card = {}) {
+  const sourceId = String(card.sourceReviewId || card.source_review_id || "").trim();
+  if (sourceId) {
+    const direct = store.records.find((record) => record.id === sourceId);
+    if (direct) return direct;
+  }
+  const source = String(card.source || "").trim();
+  return store.records.find((record) => record.id === source || record.title === source) || null;
+}
+
+function methodSourceLabel(cardOrSource) {
+  if (cardOrSource && typeof cardOrSource === "object") {
+    const record = methodSourceRecord(cardOrSource);
+    if (record) return record.title;
+    const sourceValue = String(cardOrSource.source || "").trim();
+    if (!sourceValue || /^event-[a-z0-9-]+$/i.test(sourceValue) || /^local-\d+$/i.test(sourceValue)) return "";
+    return sourceValue;
+  }
+  const value = String(cardOrSource || "").trim();
   if (!value || /^event-[a-z0-9-]+$/i.test(value) || /^local-\d+$/i.test(value)) return "";
   return value;
 }
@@ -1722,10 +1808,30 @@ function renderInlineMarkdown(value) {
   return html;
 }
 
+function pageIntro(title, subtitle) {
+  return `
+    <header class="library-page-head">
+      <h1 class="list-title">${escapeHtml(title)}</h1>
+      <p>${escapeHtml(subtitle)}</p>
+    </header>
+  `;
+}
+
 function recordsPage() {
-  const filters = ["全部", "焦虑", "工作", "学习", "情感", "面试", "人际", "决策", "健康", "未来", "生活", "其他"];
+  const typeFilters = ["全部", "事件复盘", "焦虑复盘"];
+  const sceneFilters = ["全部场景", ...fixedSceneTags()];
   const filtered = store.records.filter((record) => matchesFilter(record, state.filter) && matchesQuery([record.title, record.scene, record.conclusion]));
-  return shell(`<main class="content-page"><h1 class="list-title">我的记录</h1>${filterRow(filters)}<div class="card-list">${filtered.map(recordCard).join("") || emptyState("没有找到匹配的记录")}</div></main>`);
+  return shell(`
+    <main class="content-page library-page records-library-page">
+      ${pageIntro("我的记录", "回顾每一次复盘，看到自己的成长轨迹")}
+      <div class="library-filter-stack">
+        ${filterRow(typeFilters)}
+        <div class="library-filter-rule"></div>
+        ${filterRow(sceneFilters)}
+      </div>
+      <div class="card-list">${filtered.map(recordCard).join("") || emptyState("没有找到匹配的记录")}</div>
+    </main>
+  `);
 }
 
 function methodsPage() {
@@ -1740,9 +1846,15 @@ function methodsPage() {
       `);
     }
   }
-  const filters = ["全部", ...fixedSceneTags()];
-  const filtered = store.methods.filter((card) => (state.filter === "全部" || card.scenes.includes(state.filter)) && matchesQuery([card.title, card.trigger, methodSourceLabel(card.source)]));
-  return shell(`<main class="content-page"><h1 class="list-title">方法库</h1>${filterRow(filters)}<div class="method-grid">${filtered.map(methodCard).join("") || emptyState("没有找到匹配的方法卡")}</div></main>`);
+  const filters = ["全部", ...fixedSceneTags("event")];
+  const filtered = store.methods.filter((card) => (state.filter === "全部" || card.scenes.includes(state.filter)) && matchesQuery([card.title, card.trigger, methodSourceLabel(card)]));
+  return shell(`
+    <main class="content-page library-page methods-library-page">
+      ${pageIntro("方法库", "沉淀有效方法，在未来的类似场景中复用")}
+      ${filterRow(filters)}
+      <div class="method-grid">${filtered.map(methodCard).join("") || emptyState("没有找到匹配的方法卡")}</div>
+    </main>
+  `);
 }
 
 function calibrationPage() {
@@ -1941,24 +2053,124 @@ function filterRow(filters, selected = state.filter) {
   return `<div class="filters">${filters.map((item) => `<button class="chip ${selected === item ? "selected" : ""}" data-filter="${item}">${item}</button>`).join("")}</div>`;
 }
 
+function cardTypeLabel(record) {
+  return record.type === "anxiety" ? "焦虑复盘" : "事件复盘";
+}
+
+function recordMainLabel(record) {
+  return record.type === "anxiety" ? "当时担心" : "当时发生";
+}
+
+function cardMeta(items) {
+  return items.filter(Boolean).map((item) => `<span>${escapeHtml(item)}</span>`).join("");
+}
+
+function cardBadge(label, tone = "") {
+  return `<span class="card-badge ${tone}">${escapeHtml(label)}</span>`;
+}
+
+function librarySection(label, body, options = {}) {
+  const className = options.className ? ` ${options.className}` : "";
+  return `
+    <section class="record-preview-item library-section${className}">
+      <h4>${escapeHtml(label)}</h4>
+      ${body}
+    </section>
+  `;
+}
+
+function fieldSection(label, value, options = {}) {
+  return librarySection(label, fieldBody(value), options);
+}
+
+function textSection(label, value, options = {}) {
+  return librarySection(label, `<p>${escapeHtml(displayValue(value) || "未填写")}</p>`, options);
+}
+
+function statusPill(status) {
+  return `<span class="status-pill">${escapeHtml(status)}</span>`;
+}
+
+function scenesSection(label, scenes = []) {
+  const tags = (scenes.length ? scenes : ["其他"]).map((scene) => `<span>${escapeHtml(scene)}</span>`).join("");
+  return librarySection(label, `<div class="method-tags compact-tags">${tags}</div>`);
+}
+
+function methodStepChips(steps = []) {
+  return `
+    <div class="method-step-chips">
+      ${(steps.length ? steps : ["确认目标", "明确下一步"]).map((step, index) => `
+        <span><b>${index + 1}</b>${renderInlineMarkdown(step)}</span>
+      `).join("")}
+    </div>
+  `;
+}
+
 function recordCard(record) {
   const mode = record.type;
-  const previewFields = recordPreviewFields(record, mode);
   return `
-    <article class="list-card record-list-card" data-detail="${record.id}">
+    <article class="list-card library-card record-list-card" data-detail="${record.id}">
       <div class="card-title-row">
-        <div class="record-title-stack"><h3>${escapeHtml(record.title)}</h3><p class="record-meta">${escapeHtml(record.scene)} · ${displayDate(record.date, { full: true })}</p></div>
-        <button class="text-button danger-text" data-delete-record="${record.id}">删除</button>
+        <div class="record-title-stack">
+          <div class="library-card-kicker">
+            ${cardBadge(cardTypeLabel(record), mode === "anxiety" ? "soft" : "")}
+            <p class="record-meta">${cardMeta([record.scene, displayDate(record.date, { full: true })])}</p>
+          </div>
+          <h3>${escapeHtml(record.title)}</h3>
+        </div>
+        <div class="library-card-tools">
+          <p class="record-meta">${cardMeta([displayDate(record.date, { full: true }), record.scene])}</p>
+          <button class="card-menu danger-text" data-delete-record="${record.id}" aria-label="删除记录">⋮</button>
+        </div>
       </div>
-      <div class="record-preview">
-        ${previewFields.map(([label, value]) => `
-          <section class="record-preview-item">
-            <h4>${escapeHtml(label)}</h4>
-            ${fieldBody(value)}
-          </section>
-        `).join("")}
+      <div class="record-preview library-card-sections">
+        ${textSection(recordMainLabel(record), record.rawInput)}
+        ${textSection("复盘结论", record.conclusion)}
       </div>
-      <span>${record.status}</span>
+      <footer class="library-card-footer">
+        <span>状态</span>
+        ${statusPill(record.status)}
+        <button class="library-arrow" type="button" data-detail="${record.id}" aria-label="查看详情">${icons.chevron}</button>
+      </footer>
+      <button class="library-card-hit" type="button" data-detail="${record.id}" aria-label="查看详情"></button>
+    </article>
+  `;
+}
+
+function methodSourceFooter(source, date) {
+  return `
+    <footer class="library-card-footer source-footer">
+      <span class="source-icon">${icons.note}</span>
+      <p>${escapeHtml(source || "当前复盘")}</p>
+      <time>${escapeHtml(displayDate(date, { full: true }))}</time>
+      <span class="library-arrow">${icons.chevron}</span>
+    </footer>
+  `;
+}
+
+function methodCard(card) {
+  const source = methodSourceLabel(card);
+  return `
+    <article class="list-card library-card method-card" data-edit-method="${card.id}" tabindex="0" title="点击编辑">
+      <div class="card-title-row">
+        <div class="record-title-stack">
+          <div class="library-card-kicker">
+            ${cardBadge("可复用方法")}
+          </div>
+          <h3>${escapeHtml(card.title)}</h3>
+        </div>
+        <div class="library-card-tools">
+          <p class="record-meta">${cardMeta([card.scenes[0] || "其他"])}</p>
+          <button class="card-menu danger-text" data-delete-method="${card.id}" aria-label="删除方法">⋮</button>
+        </div>
+      </div>
+      <div class="record-preview library-card-sections">
+        ${textSection("适用场景", source ? `从「${source}」这类场景中复用。` : `${card.scenes.join("、") || "类似情况"}中复用。`)}
+        ${fieldSection("触发条件", card.trigger || "遇到类似情况前")}
+        ${librarySection("行动步骤", methodStepChips(card.steps))}
+      </div>
+      ${methodSourceFooter(source, card.updatedAt || card.createdAt)}
+      <button class="library-card-hit" type="button" data-edit-method="${card.id}" aria-label="编辑方法卡"></button>
     </article>
   `;
 }
@@ -1976,24 +2188,6 @@ function recordPreviewFields(record, mode) {
     ...selectEditFields(summary, ["现实检查"]),
     ...selectEditFields(resultCard, ["我能做什么", "提醒自己"]),
   ];
-}
-
-function methodCard(card) {
-  const source = methodSourceLabel(card.source);
-  return `
-    <article class="list-card method-card" data-edit-method="${card.id}" tabindex="0" title="点击编辑">
-      <div class="card-title-row">
-        <h3>${escapeHtml(card.title)}</h3>
-        <div class="inline-actions">
-          <button class="text-button danger-text" data-delete-method="${card.id}">删除</button>
-        </div>
-      </div>
-      <div class="method-tags">${card.scenes.map((scene) => `<span>${escapeHtml(scene)}</span>`).join("")}</div>
-      <strong>触发条件：${renderInlineMarkdown(card.trigger)}</strong>
-      <ol>${card.steps.map((step) => `<li>${renderInlineMarkdown(step)}</li>`).join("")}</ol>
-      ${source ? `<p>来自：${escapeHtml(source)}</p>` : ""}
-    </article>
-  `;
 }
 
 function methodEditCard(card) {
@@ -2054,9 +2248,9 @@ function calibrationEditCard(card) {
 }
 
 function matchesFilter(record, filter) {
-  if (filter === "全部") return true;
-  if (filter === "事件") return record.type === "event";
-  if (filter === "焦虑") return record.type === "anxiety";
+  if (filter === "全部" || filter === "全部场景") return true;
+  if (filter === "事件" || filter === "事件复盘") return record.type === "event";
+  if (filter === "焦虑" || filter === "焦虑复盘") return record.type === "anxiety";
   return record.scene === filter;
 }
 
@@ -2083,7 +2277,7 @@ function searchMethodValues(card) {
     card.title,
     card.trigger,
     card.reminder,
-    methodSourceLabel(card.source),
+    methodSourceLabel(card),
     ...flattenSearchValues(card.scenes),
     ...flattenSearchValues(card.steps),
   ];
@@ -2219,7 +2413,7 @@ async function saveMethodCard(id) {
     .map((step) => step.trim())
     .filter(Boolean);
   const selectedScene = editor.querySelector("[data-method-scene]").value;
-  const scene = fixedSceneTags().includes(selectedScene) ? selectedScene : "其他";
+  const scene = fixedSceneTags("event").includes(selectedScene) ? selectedScene : "其他";
 
   Object.assign(card, {
     title: title || card.title,
@@ -2632,14 +2826,12 @@ app.addEventListener("click", async (event) => {
   }
 
   if (target.dataset.route) {
-    const tabByRoute = { home: "review", records: "records", methods: "methods", calibration: "calibration" };
     setState(clearEditingState({ route: target.dataset.route, tab: tabByRoute[target.dataset.route] || state.tab }));
     return;
   }
 
   if (target.dataset.tab) {
     const tab = target.dataset.tab;
-    const routeByTab = { review: "home", records: "records", methods: "methods", calibration: "calibration" };
     setState(clearEditingState({ tab, route: routeByTab[tab], filter: "全部" }));
     return;
   }
@@ -2764,6 +2956,7 @@ app.addEventListener("compositionend", (event) => {
 
 updateViewportScale();
 applyTheme();
+applyRouteFromLocation();
 window.addEventListener("resize", updateViewportScale);
 window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
   if (state.theme === "system") {
@@ -2771,6 +2964,7 @@ window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change",
     render();
   }
 });
+window.addEventListener("popstate", () => applyRouteFromLocation({ shouldRender: true }));
 
 render();
 hydrateFromBackend();
