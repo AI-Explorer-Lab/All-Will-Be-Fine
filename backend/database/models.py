@@ -33,6 +33,7 @@ class ReviewEntity(Base):
     scene = Column(String(128), nullable=False, default="")
     title = Column(String(256), nullable=False, default="")
     raw_input = Column(Text, nullable=False, default="")
+    tags_json = Column(JSONB, nullable=False, default=list)
     summary_json = Column(JSONB, nullable=False, default=dict)
     deep_review_json = Column(JSONB, nullable=False, default=dict)
     result_card_json = Column(JSONB, nullable=False, default=dict)

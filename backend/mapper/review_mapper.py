@@ -74,6 +74,7 @@ class PostgresReviewMapper:
             entity.scene = record.scene
             entity.title = record.title
             entity.raw_input = record.raw_input
+            entity.tags_json = record.tags
             entity.summary_json = record.summary
             entity.deep_review_json = {}
             entity.result_card_json = record.result_card
@@ -285,6 +286,7 @@ def _review_to_domain(entity: ReviewEntity) -> ReviewRecord:
         scene=entity.scene,
         title=entity.title,
         raw_input=entity.raw_input,
+        tags=entity.tags_json or [],
         summary=entity.summary_json or {},
         result_card=entity.result_card_json or {},
         note=entity.note or "",

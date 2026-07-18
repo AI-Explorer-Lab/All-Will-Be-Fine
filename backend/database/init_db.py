@@ -10,6 +10,7 @@ def init_database() -> None:
     engine = get_engine()
     Base.metadata.create_all(bind=engine)
     _ensure_user_auth_columns(engine)
+    _ensure_review_tags_column(engine)
 
 
 def _ensure_user_auth_columns(engine) -> None:
@@ -33,3 +34,15 @@ def _ensure_user_auth_columns(engine) -> None:
             connection.execute(
                 text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username_unique ON users (username) WHERE username IS NOT NULL")
             )
+
+
+def _ensure_review_tags_column(engine) -> None:
+    inspector = inspect(engine)
+    if "reviews" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("reviews")}
+    if "tags_json" in columns:
+        return
+    with engine.begin() as connection:
+        if engine.dialect.name == "postgresql":
+            connection.execute(text("ALTER TABLE reviews ADD COLUMN tags_json JSONB NOT NULL DEFAULT '[]'::jsonb"))

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from backend.constant.review_constants import EVENT_TYPE, REVIEW_TYPES, normalize_scene
+from backend.constant.review_constants import EVENT_TYPE, REVIEW_TYPES, normalize_scene, normalize_tags
 from backend.exceptions.business_exception import ValidationException
 
 
@@ -12,6 +12,7 @@ class CreateReviewRequest:
     type: str
     raw_input: str
     scene: str | None = None
+    tags: list[str] = field(default_factory=list)
     persist: bool = True
     provided_fields: dict[str, Any] = field(default_factory=dict)
 
@@ -20,6 +21,7 @@ class CreateReviewRequest:
         review_type = payload.get("type", EVENT_TYPE)
         raw_input = (payload.get("raw_input") or payload.get("rawInput") or "").strip()
         scene = normalize_scene(payload.get("scene"), review_type)
+        tags = normalize_tags(payload.get("tags") or [])
         provided_fields = payload.get("provided_fields") or payload.get("providedFields") or {}
         if not isinstance(provided_fields, dict):
             provided_fields = {}
@@ -32,6 +34,7 @@ class CreateReviewRequest:
             type=review_type,
             raw_input=raw_input,
             scene=scene,
+            tags=tags,
             persist=persist,
             provided_fields=provided_fields,
         )

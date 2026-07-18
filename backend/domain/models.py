@@ -24,6 +24,7 @@ class ReviewRecord:
     result_card: dict[str, Any]
     created_at: str
     updated_at: str
+    tags: list[str] = field(default_factory=list)
     note: str = ""
     saved_to_method_library: bool = False
     saved_to_calibration: bool = False

@@ -10,6 +10,7 @@ from backend.constant.review_constants import (
     EVENT_TYPE,
     normalize_scene,
     normalize_scenes,
+    normalize_tags,
 )
 from backend.domain.models import CalibrationCard, MethodCard, ReviewBundle, ReviewRecord, UserContext
 from backend.domain.req import CreateReviewRequest, FollowUpRequest, UpdateNoteRequest
@@ -69,6 +70,7 @@ class ReviewService:
             scene=normalize_scene(payload.get("scene", existing.scene), payload.get("type", existing.type)),
             title=payload.get("title", existing.title),
             raw_input=payload.get("raw_input") or payload.get("rawInput") or existing.raw_input,
+            tags=normalize_tags(payload.get("tags", existing.tags)),
             summary=payload.get("summary", existing.summary),
             result_card=payload.get("result_card") or payload.get("resultCard") or existing.result_card,
             created_at=payload.get("created_at") or payload.get("createdAt") or existing.created_at,
@@ -138,14 +140,36 @@ class ReviewService:
         return {"review_id": review_id}
 
     def delete_method(self, method_id: str, user: UserContext) -> dict[str, str]:
-        if not self.mapper.delete_method(method_id, user.user_id):
+        method = next((card for card in self.mapper.list_methods(user.user_id) if card.id == method_id), None)
+        if method is None or not self.mapper.delete_method(method_id, user.user_id):
             raise NotFoundException("方法卡不存在")
-        return {"method_id": method_id}
+        self._clear_record_destination(method.source_review_id, user, method=True)
+        return {"method_id": method_id, "source_review_id": method.source_review_id}
 
     def delete_calibration(self, calibration_id: str, user: UserContext) -> dict[str, str]:
-        if not self.mapper.delete_calibration(calibration_id, user.user_id):
+        calibration = next((card for card in self.mapper.list_calibrations(user.user_id) if card.id == calibration_id), None)
+        if calibration is None or not self.mapper.delete_calibration(calibration_id, user.user_id):
             raise NotFoundException("校准卡不存在")
-        return {"calibration_id": calibration_id}
+        self._clear_record_destination(calibration.source_review_id, user, calibration=True)
+        return {"calibration_id": calibration_id, "source_review_id": calibration.source_review_id}
+
+    def _clear_record_destination(
+        self,
+        review_id: str,
+        user: UserContext,
+        *,
+        method: bool = False,
+        calibration: bool = False,
+    ) -> None:
+        record = self.mapper.get_review(review_id, user.user_id)
+        if record is None:
+            return
+        if method:
+            record.saved_to_method_library = False
+        if calibration:
+            record.saved_to_calibration = False
+        record.updated_at = _now_iso()
+        self.mapper.save_review(record, user.user_id)
 
     def _bundle_from_slots(self, request: CreateReviewRequest, slots: dict, warnings: list[str] | None = None) -> ReviewBundle:
         now = _now_iso()
@@ -160,6 +184,7 @@ class ReviewService:
                 scene=scene,
                 title=title,
                 raw_input=request.raw_input,
+                tags=request.tags,
                 summary=slots.get("summary") or {},
                 result_card=slots.get("result_card") or {},
                 created_at=now,
@@ -184,6 +209,7 @@ class ReviewService:
             scene=scene,
             title=title,
             raw_input=request.raw_input,
+            tags=request.tags,
             summary=slots.get("summary") or {},
             result_card=slots.get("result_card") or {},
             created_at=now,
@@ -282,6 +308,7 @@ def _bundle_from_payload(payload: dict) -> ReviewBundle:
         scene=normalize_scene(record_payload.get("scene"), record_payload.get("type", EVENT_TYPE)),
         title=record_payload.get("title") or "",
         raw_input=record_payload.get("raw_input") or record_payload.get("rawInput") or "",
+        tags=normalize_tags(record_payload.get("tags") or []),
         summary=record_payload.get("summary") or {},
         result_card=record_payload.get("result_card") or record_payload.get("resultCard") or {},
         created_at=record_payload.get("created_at") or record_payload.get("createdAt") or _now_iso(),

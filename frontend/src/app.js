@@ -11,8 +11,117 @@ const API_BASE = localStorage.getItem("review_api_base") || defaultApiBase();
 const AUTH_TOKEN_KEY = "review_auth_token";
 const AUTH_USER_KEY = "review_auth_user";
 const THEME_KEY = "review_theme";
+const CALIBRATION_CHECKINS_KEY = "review_calibration_checkins";
 const DESIGN_WIDTH = 1180;
 const app = document.querySelector("#app");
+const HOME_REVIEW_TAGS = ["沟通问题", "目标偏差", "执行卡点", "情绪波动", "认知盲区", "关系边界", "习惯调整", "经验沉淀"];
+
+const ADVANCED_METHODS = [
+  {
+    id: "5why",
+    title: "5 Why 分析法",
+    category: "复盘框架",
+    tag: "复盘框架",
+    art: "why",
+    description: "连续追问原因，找到真正需要改变的环节。",
+    prompts: [
+      ["analysis", "问题的第一层原因", "先写下最直接、最表层的原因。"],
+      ["action", "继续追问到根因，并写下行动", "把第 2 到第 5 个“为什么”写清楚，最后落到一个动作。"],
+      ["reminder", "下次的检查问题", "下次开始前，最该先确认什么？"],
+    ],
+  },
+  {
+    id: "grow",
+    title: "GROW 模型",
+    category: "目标行动",
+    tag: "目标与行动",
+    art: "grow",
+    description: "从目标、现实、选择到承诺，重新组织下一步。",
+    prompts: [
+      ["analysis", "目标与现实", "你真正想达成什么？现在的情况是什么？"],
+      ["action", "可选路径与下一步", "列出可行选项，并选定最小的下一步行动。"],
+      ["reminder", "行动承诺", "你准备在什么时间、以什么标准完成？"],
+    ],
+  },
+  {
+    id: "abc",
+    title: "情绪 ABC 理论",
+    category: "情绪管理",
+    tag: "情绪管理",
+    art: "abc",
+    description: "区分事件、信念与情绪反应，松开自动化想法。",
+    prompts: [
+      ["analysis", "触发事件与自动想法", "发生了什么？你当时立刻相信了什么？"],
+      ["action", "重新解释与可控行动", "有没有更平衡的解释？你能做的第一步是什么？"],
+      ["reminder", "给自己的新提醒", "写一句更贴近事实、也能支持行动的话。"],
+    ],
+  },
+  {
+    id: "star",
+    title: "STAR 法则",
+    category: "结构表达",
+    tag: "沟通协作",
+    art: "star",
+    description: "用情境、任务、行动、结果，复盘一次表达与执行。",
+    prompts: [
+      ["analysis", "情境、任务与行动", "当时的背景和目标是什么？你具体做了什么？"],
+      ["action", "结果与下一次表达", "结果如何？下次要补足哪一个关键动作？"],
+      ["reminder", "一句结构化提醒", "下次先说清哪四件事？"],
+    ],
+  },
+  {
+    id: "quadrant",
+    title: "四象限法则",
+    category: "思维模型",
+    tag: "思维模型",
+    art: "quadrant",
+    description: "用重要与紧急重新排序，把精力留给真正重要的事。",
+    prompts: [
+      ["analysis", "重要性与紧急性", "这件事属于哪一象限？为什么会落到现在的状态？"],
+      ["action", "重新安排与边界", "哪些事该提前安排、委托或拒绝？"],
+      ["reminder", "优先级提醒", "下一周最该保护的时间是什么？"],
+    ],
+  },
+  {
+    id: "prep",
+    title: "PREP 表达法",
+    category: "结构表达",
+    tag: "沟通协作",
+    art: "prep",
+    description: "先讲观点，再给理由、例子和重申，复盘一次关键沟通。",
+    prompts: [
+      ["analysis", "观点与理由", "你当时最想表达的观点是什么？理由足够清楚吗？"],
+      ["action", "例子与重述", "补上哪个例子能让对方理解？下一次如何重述观点？"],
+      ["reminder", "表达前的提纲", "写下你下次开口前要先说的一句话。"],
+    ],
+  },
+  {
+    id: "feynman",
+    title: "费曼学习法",
+    category: "学习成长",
+    tag: "学习成长",
+    art: "feynman",
+    description: "用讲给外行听的方式，发现知识与理解中的空洞。",
+    prompts: [
+      ["analysis", "讲不清的部分", "如果讲给新人听，哪里最容易卡住？"],
+      ["action", "补洞与输出", "要补哪块知识？下一次准备怎样讲出来？"],
+      ["reminder", "学习检验", "用一句话写下真正理解的标准。"],
+    ],
+  },
+  {
+    id: "swot",
+    title: "SWOT 分析法",
+    category: "决策判断",
+    tag: "决策判断",
+    art: "swot",
+    description: "看清优势、限制、机会和风险，再做更稳的选择。",
+    prompts: [
+      ["analysis", "优势、限制与机会", "此刻你手里有哪些资源？哪些限制最关键？"],
+      ["action", "风险与应对动作", "最大的风险是什么？如何用一个动作降低它？"],
+      ["reminder", "决策原则", "写下一条这次决策给你的原则。"],
+    ],
+  },
+];
 
 const store = {
   records: [],
@@ -20,12 +129,20 @@ const store = {
   calibrations: [],
 };
 
+let breathingTimer = null;
+let breathingStartFrame = null;
+let resetWorkspaceScroll = false;
+
 const state = {
   tab: "review",
   route: "home",
   mode: "event",
+  reviewStyle: "quick",
+  advancedMethodId: "5why",
   scene: "工作",
   draft: "",
+  homeMetaOpen: "",
+  homeTags: [],
   draftFields: {
     event: {
       improvement: "",
@@ -39,9 +156,27 @@ const state = {
       verificationDate: "",
     },
   },
+  advancedDraftFields: Object.fromEntries(ADVANCED_METHODS.map((method) => [method.id, {
+    analysis: "",
+    action: "",
+    reminder: "",
+  }])),
   filter: "全部",
   query: "",
+  methodView: "templates",
+  calibrationView: "checkin",
   calibrationTab: "pending",
+  calibrationHistoryOpen: false,
+  calibrationSession: {
+    mood: "平静",
+    feelings: [],
+    note: "",
+    extraOpen: false,
+  },
+  calibrationCheckins: safeJsonParse(localStorage.getItem(CALIBRATION_CHECKINS_KEY), []),
+  breathingActive: false,
+  breathingPhase: "吸气",
+  breathingSeconds: 4,
   selectedRecordId: "",
   editingRecordId: null,
   editingMethodId: null,
@@ -51,7 +186,6 @@ const state = {
   loading: false,
   saving: false,
   followUpLoading: false,
-  saveDialogOpen: false,
   searchComposing: false,
   apiOnline: false,
   toast: "",
@@ -136,12 +270,12 @@ function applyTheme() {
 function updateViewportScale() {
   const width = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
   const height = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
-  const nextScale = Math.min(1, width / DESIGN_WIDTH);
-  const scaledWidth = Math.max(DESIGN_WIDTH, width / nextScale);
-  const scaledHeight = height / nextScale;
-  document.documentElement.style.setProperty("--app-scale", nextScale.toFixed(4));
-  document.documentElement.style.setProperty("--app-width", `${scaledWidth.toFixed(2)}px`);
-  document.documentElement.style.setProperty("--app-height", `${scaledHeight.toFixed(2)}px`);
+  // The previous fixed-canvas scaling made a large physical monitor look like a
+  // zoomed-out 1180px mockup. Layout now uses real viewport dimensions; CSS
+  // breakpoints handle narrow screens instead of shrinking the entire product.
+  document.documentElement.style.setProperty("--app-scale", "1");
+  document.documentElement.style.setProperty("--app-width", `${width}px`);
+  document.documentElement.style.setProperty("--app-height", `${height}px`);
 }
 
 function cycleTheme() {
@@ -166,6 +300,8 @@ function appBasePath() {
 }
 
 function normalizedAppPath() {
+  const hashPath = window.location.hash.replace(/^#/, "");
+  if (tabByPath[hashPath]) return hashPath;
   const base = appBasePath();
   let path = window.location.pathname;
   if (base && path.startsWith(base)) path = path.slice(base.length) || "/";
@@ -179,24 +315,28 @@ function routeStateFromLocation() {
 }
 
 function urlForTab(tab) {
-  return `${appBasePath()}${pathByTab[tab] || pathByTab.review}`;
+  const base = appBasePath();
+  const root = base ? `${base}/` : "/";
+  return `${root}#${pathByTab[tab] || pathByTab.review}`;
 }
 
 function syncUrlForState(mode = "push") {
   if (!window.history?.pushState) return;
   const tab = tabByRoute[state.route] || state.tab || "review";
   const nextUrl = urlForTab(tab);
-  if (window.location.pathname === nextUrl) return;
+  if (`${window.location.pathname}${window.location.hash}` === nextUrl) return;
   window.history[mode === "replace" ? "replaceState" : "pushState"]({ tab, route: routeByTab[tab] }, "", nextUrl);
 }
 
 function applyRouteFromLocation({ shouldRender = false } = {}) {
   const next = routeStateFromLocation();
+  resetWorkspaceScroll = next.route !== state.route;
   Object.assign(state, clearEditingState({ ...next, filter: "全部" }));
   if (shouldRender) render();
 }
 
 function setState(next, options = {}) {
+  if ("route" in next && next.route !== state.route) resetWorkspaceScroll = true;
   Object.assign(state, next);
   render();
   if (options.syncUrl !== false && ("route" in next || "tab" in next)) {
@@ -220,6 +360,31 @@ function clearEditingState(next = {}) {
     editingCalibrationId: null,
     ...next,
   };
+}
+
+function clearCompletedReview() {
+  state.draft = "";
+  state.homeTags = [];
+  state.homeMetaOpen = "";
+  state.currentBundle = null;
+  state.followUp = null;
+  state.reviewStyle = "quick";
+  state.draftFields = {
+    event: { improvement: "", next: "", reminder: "" },
+    anxiety: { reality: "", action: "", reminder: "", verificationDate: "" },
+  };
+  state.advancedDraftFields = Object.fromEntries(ADVANCED_METHODS.map((method) => [method.id, {
+    analysis: "",
+    action: "",
+    reminder: "",
+  }]));
+}
+
+function beginNewReview(mode = state.mode) {
+  clearCompletedReview();
+  state.mode = mode;
+  state.scene = scenes[mode][0];
+  setState(clearEditingState({ route: "home", tab: "review", filter: "全部" }));
 }
 
 function notify(message) {
@@ -248,6 +413,20 @@ function modePlaceholder(mode) {
 
 function icon(name) {
   return `<span class="icon">${icons[name]}</span>`;
+}
+
+function methodIcon(kind) {
+  const iconsByKind = {
+    why: `<svg viewBox="0 0 80 80"><circle cx="34" cy="34" r="18" fill="none" stroke="currentColor" stroke-width="4"/><path d="m48 48 18 18M25 30h18M25 37h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>`,
+    grow: `<svg viewBox="0 0 80 80"><path d="M41 65V31M41 42C26 41 20 31 21 20c13 1 20 9 20 22M42 52c15-1 21-10 20-21-13 1-20 8-20 21" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/><path d="M25 66h36" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>`,
+    abc: `<svg viewBox="0 0 80 80"><path d="M12 61c12-10 21-21 29-39 9 16 16 25 27 34" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><circle cx="61" cy="22" r="7" fill="currentColor" opacity=".7"/></svg>`,
+    star: `<svg viewBox="0 0 80 80"><path d="M29 65h22M33 65V39h14v26M40 15l18 22H22z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><path d="M17 65h46" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>`,
+    quadrant: `<svg viewBox="0 0 80 80"><rect x="18" y="18" width="44" height="44" rx="3" fill="none" stroke="currentColor" stroke-width="3"/><path d="M40 18v44M18 40h44" stroke="currentColor" stroke-width="3"/></svg>`,
+    prep: `<svg viewBox="0 0 80 80"><path d="M20 18h35v44H20zM28 30h19M28 39h19M28 48h12M54 56l12 12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="m58 52 8 8-5 5-8-8z" fill="currentColor"/></svg>`,
+    feynman: `<svg viewBox="0 0 80 80"><path d="M18 22h22c7 0 12 5 12 12v26H30c-7 0-12-5-12-12zM62 20v42" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><path d="M28 34h15M28 42h15" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>`,
+    swot: `<svg viewBox="0 0 80 80"><path d="M18 26h44M26 26v32M40 26v32M54 26v32M18 58h44" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M26 26 20 18M40 26v-9M54 26l6-8" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>`,
+  };
+  return iconsByKind[kind] || iconsByKind.why;
 }
 
 function apiStatusText() {
@@ -439,6 +618,7 @@ async function analyzeDraft() {
       body: JSON.stringify({
         type: state.mode,
         scene: state.scene,
+        tags: state.homeTags,
         raw_input: rawInput,
         provided_fields: providedFields,
         persist: false,
@@ -451,7 +631,7 @@ async function analyzeDraft() {
     notify(normalized.warnings.length ? normalized.warnings[0] : "已生成行动卡");
   } catch (error) {
     if (handleAuthError(error)) return;
-    const fallback = buildManualBundle(rawInput, state.mode, state.scene, currentDraftFields());
+    const fallback = buildManualBundle(rawInput, state.mode, state.scene, submissionDraftFields());
     state.currentBundle = fallback;
     setState({ loading: false, route: "result", apiOnline: false });
     notify("后端未连接，已用本地结果继续流程");
@@ -464,9 +644,17 @@ function startManualReview() {
     notify("先写下一点内容，再开始复盘");
     return;
   }
-  state.currentBundle = buildManualBundle(rawInput, state.mode, state.scene, currentDraftFields());
+  state.currentBundle = buildManualBundle(rawInput, state.mode, state.scene, submissionDraftFields());
   state.followUp = null;
   setState({ route: "result", tab: "review" });
+}
+
+function startReviewSetup() {
+  if (!state.draft.trim()) {
+    notify("先写下一点内容，再开始复盘");
+    return;
+  }
+  setState({ route: "reviewSetup", tab: "review" });
 }
 
 function normalizeBundle(bundle) {
@@ -495,11 +683,12 @@ function normalizeRecord(record) {
     createdAt,
     shortDate: displayDate(createdAt),
     rawInput: record.raw_input || record.rawInput || "",
+    tags: (record.tags || []).filter((tag) => HOME_REVIEW_TAGS.includes(tag)),
     summary: record.summary || {},
     resultCard,
     conclusion: record.conclusion || firstValue(resultCard) || "已生成一张可执行的复盘卡。",
     note: record.note || record.myNote || "",
-    status: savedToMethodLibrary ? "已生成方法卡" : savedToCalibration ? "已加入校准" : "未沉淀",
+    status: savedToCalibration ? "已加入校准" : savedToMethodLibrary ? "已沉淀方法" : "已保存",
     savedToMethodLibrary,
     savedToCalibration,
   };
@@ -610,6 +799,7 @@ function recordPayload(record) {
     scene: record.scene,
     title: record.title,
     raw_input: record.rawInput,
+    tags: record.tags || [],
     summary: record.summary,
     result_card: record.resultCard,
     note: record.note || "",
@@ -659,6 +849,7 @@ function bundlePayload(bundle) {
       scene: bundle.record.scene,
       title: bundle.record.title,
       raw_input: bundle.record.rawInput,
+      tags: bundle.record.tags || [],
       summary: bundle.record.summary,
       result_card: bundle.record.resultCard,
       note: bundle.record.note || "",
@@ -694,16 +885,18 @@ function bundlePayload(bundle) {
   };
 }
 
-async function persistCurrentBundle(destination = "records", options = {}) {
+async function persistCurrentBundle(destination = "records") {
   if (!state.currentBundle?.record || state.saving) return;
   const previousBundle = state.currentBundle;
   const saveToMethod = destination === "methods";
   const saveToCalibration = destination === "calibration";
+  const targetRoute = saveToCalibration ? "calibration" : saveToMethod ? "methods" : "records";
+  const targetTab = saveToCalibration ? "calibration" : saveToMethod ? "methods" : "records";
   state.currentBundle.includeMethodCard = saveToMethod;
   state.currentBundle.includeCalibrationCard = saveToCalibration;
   state.currentBundle.record.savedToMethodLibrary = saveToMethod;
   state.currentBundle.record.savedToCalibration = saveToCalibration;
-  state.currentBundle.record.status = saveToMethod ? "已生成方法卡" : saveToCalibration ? "已加入校准" : "已保存";
+  state.currentBundle.record.status = saveToCalibration ? "已加入校准" : saveToMethod ? "已沉淀方法" : "已保存";
   setState({ saving: true });
   try {
     const saved = await request("/reviews/save", {
@@ -713,30 +906,40 @@ async function persistCurrentBundle(destination = "records", options = {}) {
     const normalized = normalizeBundle(saved);
     if (!normalized.methodCard && previousBundle.methodCard) normalized.methodCard = previousBundle.methodCard;
     if (!normalized.calibrationCard && previousBundle.calibrationCard) normalized.calibrationCard = previousBundle.calibrationCard;
-    normalized.record.status = saveToMethod ? "已生成方法卡" : saveToCalibration ? "已加入校准" : "已保存";
+    normalized.record.status = saveToCalibration ? "已加入校准" : saveToMethod ? "已沉淀方法" : "已保存";
     normalized.record.savedToMethodLibrary = saveToMethod;
     normalized.record.savedToCalibration = saveToCalibration;
     state.currentBundle = normalized;
     upsertRecord(normalized.record);
     if (saveToMethod && normalized.methodCard) upsertMethod(normalized.methodCard);
     if (saveToCalibration && normalized.calibrationCard) upsertCalibration(normalized.calibrationCard);
-    if (options.askMethodLibrary) {
-      setState({ saving: false, saveDialogOpen: true, route: "result", tab: "review", apiOnline: true });
-    } else {
-      setState({ saving: false, saveDialogOpen: false, route: destination, tab: destination === "methods" ? "methods" : destination === "calibration" ? "calibration" : "records", apiOnline: true });
-    }
-    notify(destination === "methods" ? "记录已保存，并同步到方法库" : destination === "calibration" ? "记录已保存，并同步到校准" : "记录已保存");
+    clearCompletedReview();
+    setState({
+      saving: false,
+      route: targetRoute,
+      tab: targetTab,
+      methodView: saveToMethod ? "mine" : state.methodView,
+      calibrationView: saveToCalibration ? "cards" : state.calibrationView,
+      calibrationTab: "pending",
+      apiOnline: true,
+    });
+    notify(saveToCalibration ? "已保存，并创建待验证的焦虑卡" : saveToMethod ? "已保存，并沉淀为个人方法" : "记录已保存");
   } catch (error) {
     if (handleAuthError(error)) return;
     const normalized = state.currentBundle;
     upsertRecord(normalized.record);
-    if (normalized.methodCard) upsertMethod(normalized.methodCard);
-    if (normalized.calibrationCard) upsertCalibration(normalized.calibrationCard);
-    if (options.askMethodLibrary) {
-      setState({ saving: false, saveDialogOpen: true, route: "result", tab: "review", apiOnline: false });
-    } else {
-      setState({ saving: false, saveDialogOpen: false, route: destination, tab: destination === "methods" ? "methods" : destination === "calibration" ? "calibration" : "records", apiOnline: false });
-    }
+    if (saveToMethod && normalized.methodCard) upsertMethod(normalized.methodCard);
+    if (saveToCalibration && normalized.calibrationCard) upsertCalibration(normalized.calibrationCard);
+    clearCompletedReview();
+    setState({
+      saving: false,
+      route: targetRoute,
+      tab: targetTab,
+      methodView: saveToMethod ? "mine" : state.methodView,
+      calibrationView: saveToCalibration ? "cards" : state.calibrationView,
+      calibrationTab: "pending",
+      apiOnline: false,
+    });
     notify("后端未连接，已先保存在本地演示数据中");
   }
 }
@@ -766,6 +969,131 @@ function weekStartMonday(date = new Date()) {
   const mondayOffset = (copy.getDay() + 6) % 7;
   copy.setDate(copy.getDate() - mondayOffset);
   return copy;
+}
+
+function normalizedCalibrationCheckins() {
+  return Array.isArray(state.calibrationCheckins)
+    ? state.calibrationCheckins.filter((item) => item && /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || "")))
+    : [];
+}
+
+function calibrationWeekState() {
+  const start = weekStartMonday();
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const date = addDays(start, index);
+    const key = localDateKey(date);
+    return {
+      key,
+      label: ["一", "二", "三", "四", "五", "六", "日"][index],
+      completed: normalizedCalibrationCheckins().some((item) => item.date === key),
+    };
+  });
+  return { days, completed: days.filter((day) => day.completed).length };
+}
+
+function persistCalibrationCheckins() {
+  localStorage.setItem(CALIBRATION_CHECKINS_KEY, JSON.stringify(normalizedCalibrationCheckins()));
+}
+
+function completeCalibrationCheckin() {
+  const today = localDateKey();
+  const entry = {
+    date: today,
+    mood: state.calibrationSession.mood,
+    feelings: [...state.calibrationSession.feelings],
+    note: state.calibrationSession.note.trim(),
+    completedAt: localDateTimeKey(),
+  };
+  state.calibrationCheckins = [
+    entry,
+    ...normalizedCalibrationCheckins().filter((item) => item.date !== today),
+  ];
+  persistCalibrationCheckins();
+  notify("本次焦虑校准已记录");
+}
+
+function stopBreathingExercise({ reset = false } = {}) {
+  if (breathingStartFrame) window.cancelAnimationFrame(breathingStartFrame);
+  breathingStartFrame = null;
+  if (breathingTimer) window.clearInterval(breathingTimer);
+  breathingTimer = null;
+  state.breathingActive = false;
+  if (reset) {
+    state.breathingPhase = "吸气";
+    state.breathingSeconds = 4;
+  }
+}
+
+function breathingPhaseToken(phase = state.breathingPhase) {
+  return { "吸气": "inhale", "屏息": "hold", "呼气": "exhale" }[phase] || "inhale";
+}
+
+function breathingPhaseCopy(phase = state.breathingPhase) {
+  return { "吸气": "慢慢吸气", "屏息": "轻轻停留", "呼气": "缓缓呼气" }[phase] || "慢慢吸气";
+}
+
+function syncBreathingUi({ phaseChanged = false } = {}) {
+  const card = app.querySelector(".breathing-card");
+  if (!card) return;
+
+  card.classList.toggle("active", state.breathingActive);
+  card.dataset.breathingPhase = breathingPhaseToken();
+
+  const phaseLabel = card.querySelector("[data-breathing-phase-label]");
+  const helper = card.querySelector("[data-breathing-helper]");
+  const summary = app.querySelector("[data-breathing-summary]");
+  const controlIcon = app.querySelector("[data-breathing-control-icon]");
+  const controlLabel = state.breathingActive ? "暂停呼吸练习" : "开始呼吸练习";
+
+  if (phaseLabel) {
+    phaseLabel.textContent = breathingPhaseCopy();
+    if (phaseChanged) {
+      phaseLabel.classList.remove("phase-changing");
+      window.requestAnimationFrame(() => phaseLabel.classList.add("phase-changing"));
+    }
+  }
+  if (helper) helper.textContent = state.breathingActive ? "跟随圆环的节奏，不用数秒" : "点击呼吸环开始练习";
+  if (summary) summary.textContent = state.breathingActive ? breathingPhaseCopy() : "约 8 分钟";
+  if (controlIcon) controlIcon.textContent = state.breathingActive ? "Ⅱ" : "▶";
+  app.querySelectorAll("[data-breathing-toggle]").forEach((button) => button.setAttribute("aria-label", controlLabel));
+}
+
+function startBreathingExercise() {
+  stopBreathingExercise({ reset: true });
+  render();
+  const phases = [
+    ["吸气", 4],
+    ["屏息", 7],
+    ["呼气", 8],
+  ];
+  breathingStartFrame = window.requestAnimationFrame(() => {
+    breathingStartFrame = null;
+    state.breathingActive = true;
+    syncBreathingUi();
+    breathingTimer = window.setInterval(() => {
+      if (!state.breathingActive) return;
+      let phaseChanged = false;
+      if (state.breathingSeconds > 1) {
+        state.breathingSeconds -= 1;
+      } else {
+        const currentIndex = phases.findIndex(([phase]) => phase === state.breathingPhase);
+        const [nextPhase, nextSeconds] = phases[(currentIndex + 1) % phases.length];
+        state.breathingPhase = nextPhase;
+        state.breathingSeconds = nextSeconds;
+        phaseChanged = true;
+      }
+      syncBreathingUi({ phaseChanged });
+    }, 1000);
+  });
+}
+
+function toggleBreathingExercise() {
+  if (state.breathingActive) {
+    stopBreathingExercise({ reset: true });
+    render();
+    return;
+  }
+  startBreathingExercise();
 }
 
 function parseMonthKey(monthKey) {
@@ -843,6 +1171,36 @@ function currentDraftFields() {
   return state.draftFields[state.mode];
 }
 
+function currentAdvancedMethod() {
+  return ADVANCED_METHODS.find((method) => method.id === state.advancedMethodId) || ADVANCED_METHODS[0];
+}
+
+function currentAdvancedFields() {
+  const method = currentAdvancedMethod();
+  if (!state.advancedDraftFields[method.id]) {
+    state.advancedDraftFields[method.id] = { analysis: "", action: "", reminder: "" };
+  }
+  return state.advancedDraftFields[method.id];
+}
+
+function submissionDraftFields() {
+  if (state.reviewStyle !== "advanced") return currentDraftFields();
+  const fields = currentAdvancedFields();
+  if (state.mode === "anxiety") {
+    return {
+      reality: fields.analysis,
+      action: fields.action,
+      reminder: fields.reminder,
+      verificationDate: currentDraftFields().verificationDate,
+    };
+  }
+  return {
+    improvement: fields.analysis,
+    next: fields.action,
+    reminder: fields.reminder,
+  };
+}
+
 function draftVerificationDate() {
   return String(state.draftFields.anxiety.verificationDate || "").trim();
 }
@@ -894,7 +1252,7 @@ function hasDraftValue(value) {
 
 function composeDraftFields() {
   const base = state.draft.trim();
-  const fields = currentDraftFields();
+  const fields = submissionDraftFields();
   const lines = state.mode === "event"
     ? [
         ["发生了什么", base],
@@ -908,12 +1266,21 @@ function composeDraftFields() {
         ["我能做什么", markdownText(fields.action)],
         ["提醒自己", fields.reminder],
       ];
-  return Object.fromEntries(lines
+  const provided = Object.fromEntries(lines
     .filter(([, value]) => hasDraftValue(value))
     .map(([label, value]) => [label, Array.isArray(value) ? value : String(value).trim()]));
+  if (state.reviewStyle === "advanced") {
+    const method = currentAdvancedMethod();
+    provided["复盘方法"] = method.title;
+    method.prompts.forEach(([key, label]) => {
+      const value = currentAdvancedFields()[key];
+      if (hasDraftValue(value)) provided[label] = String(value).trim();
+    });
+  }
+  return provided;
 }
 
-function buildLocalBundle(rawInput, mode, scene) {
+function buildLocalBundle(rawInput, mode, scene, tags = state.homeTags) {
   const today = localDateKey();
   const now = localDateTimeKey();
   const eventSteps = ["复述我对事情的理解", "确认目标和边界", "列出关键不确定点", "明确完成标准"];
@@ -926,6 +1293,7 @@ function buildLocalBundle(rawInput, mode, scene) {
     scene,
     title: rawInput.slice(0, 22) || (mode === "event" ? "新的事件复盘" : "新的焦虑复盘"),
     rawInput,
+    tags,
     summary: mode === "event" ? {
       发生了什么: rawInput,
       需要改进的地方: "开始前还需要把目标、边界和验收标准确认得更清楚。",
@@ -972,7 +1340,7 @@ function buildLocalBundle(rawInput, mode, scene) {
   };
 }
 
-function buildManualBundle(rawInput, mode, scene, fields = currentDraftFields()) {
+function buildManualBundle(rawInput, mode, scene, fields = submissionDraftFields()) {
   const bundle = buildLocalBundle(rawInput, mode, scene);
   if (mode === "event") {
     const nextText = markdownText(fields.next);
@@ -1157,6 +1525,13 @@ function shell(content) {
   const username = state.authUser?.username || "已登录";
   const notifications = notificationItems();
   const theme = resolvedTheme();
+  const weekStart = weekStartMonday();
+  const weekEnd = addDays(weekStart, 6);
+  const weeklyReviews = store.records.filter((record) => {
+    const date = new Date(record.date || record.createdAt || "");
+    return !Number.isNaN(date.getTime()) && date >= weekStart && date <= addDays(weekEnd, 1);
+  }).length;
+  const pendingCalibrations = store.calibrations.filter((card) => card.status === "pending").length;
   return `
     <aside class="sidebar">
       <div class="brand">${leafLogo()}<div><div class="brand-name">复盘</div><div class="brand-subtitle">下一次会更好</div></div></div>
@@ -1167,17 +1542,17 @@ function shell(content) {
           </button>
         `).join("")}
       </nav>
-      <div class="growth-card">
-        ${deskPlantArt("small")}
-        <div class="growth-title">把经历整理成方法</div>
-        <p>你已经复盘了 ${store.records.length} 件事<br />沉淀了 ${store.methods.length} 张方法卡</p>
-        <button class="outline-button" data-tab="methods">查看我的成长</button>
+      <div class="growth-card sidebar-progress-card">
+        <span>本周进展</span>
+        <strong>${weeklyReviews}<small> 次复盘</small></strong>
+        <div><span>${store.methods.length} 张方法</span><span>${pendingCalibrations} 张待验证</span></div>
+        <button class="outline-button" data-tab="records">查看成长轨迹</button>
       </div>
     </aside>
-    <section class="workspace">
+    <section class="workspace workspace-${state.route}">
       <header class="top-header">
         <label class="search-box">
-          <input data-search value="${escapeHtml(state.query)}" placeholder="搜索复盘记录、方法卡片..." />
+          <input data-search value="${escapeHtml(state.query)}" placeholder="搜索记录、方法与校准卡..." />
           <button type="button" data-search-submit aria-label="搜索">${icons.search}</button>
         </label>
         <button class="header-icon theme-toggle" data-theme-toggle type="button" aria-label="${theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}" title="${theme === "dark" ? "浅色模式" : "深色模式"}">
@@ -1300,34 +1675,134 @@ function quoteArt() {
 
 function homePage() {
   const mode = state.mode;
+  const tagsLabel = homeTagsLabel();
+  const sceneLabel = state.scene || "选择情境";
+  const isEvent = mode === "event";
   return shell(`
-    <main class="home-page">
-      <section class="hero">
-        <div class="hero-copy">
-          <h1>${modeLabel(mode)}，下一次会更好</h1>
-          <div class="input-panel">
-            ${reviewContextControls(mode)}
-            ${structuredDraftForm(mode)}
-            <div class="input-footer">
-              <strong>${mode === "event" ? "先写清楚，再变成下次可用的行动卡" : "把担心拆成现实检查和可控行动"}</strong>
-              <button class="ghost-button" data-home-ai ${state.loading ? "disabled" : ""}>${state.loading ? "生成中..." : "AI 复盘"}</button>
-              <button class="primary-button" data-home-analyze>开始复盘</button>
+    <main class="home-page home-landing-page editorial-home-page">
+      <header class="home-titlebar"><div><h1>复盘</h1><p>把经历整理成下一次能用的行动</p></div></header>
+      <section class="home-start-card">
+        <div class="home-start-copy">
+          <div class="home-start-heading">
+            <h2>${isEvent ? "复盘一件事" : "安放一次焦虑"} <span>⌁</span></h2>
+            <div class="home-mode-switch" role="tablist" aria-label="复盘类型">
+              <button class="${isEvent ? "active" : ""}" data-mode="event" role="tab" aria-selected="${isEvent}">事件复盘</button>
+              <button class="${!isEvent ? "active" : ""}" data-mode="anxiety" role="tab" aria-selected="${!isEvent}">焦虑复盘</button>
             </div>
           </div>
+          <label class="home-draft-field"><textarea data-draft maxlength="1200" placeholder="${escapeHtml(modePlaceholder(mode))}">${escapeHtml(state.draft)}</textarea></label>
+          <div class="home-start-meta">
+            <div class="home-meta-control">
+              <button class="home-meta-trigger ${state.homeTags.length ? "selected" : ""}" type="button" data-home-meta="tags" aria-expanded="${state.homeMetaOpen === "tags"}">◇ ${escapeHtml(tagsLabel)}</button>
+              ${state.homeMetaOpen === "tags" ? homeTagsPopover() : ""}
+            </div>
+            <div class="home-meta-control">
+              <button class="home-meta-trigger selected" type="button" data-home-meta="scene" aria-expanded="${state.homeMetaOpen === "scene"}">◎ ${escapeHtml(sceneLabel)}</button>
+              ${state.homeMetaOpen === "scene" ? homeScenePopover(mode) : ""}
+            </div>
+            <button class="home-start-button" data-home-analyze>✎ ${isEvent ? "开始复盘" : "开始校准"}</button>
+          </div>
         </div>
-        ${deskPlantArt()}
+        <div class="home-start-art"><span>⌁</span><i></i><i></i></div>
       </section>
-      <section class="dashboard-grid">
-        ${recentPanel()}
+      <section class="home-insight-grid">
         ${weekPanel()}
+        ${homeInsightPanel()}
+        ${recentPanel()}
         ${inspirationPanel()}
       </section>
-      <div class="footer-line"><span>复盘，是为了更好的下一次</span></div>
     </main>
   `);
 }
 
+function homeTagsLabel() {
+  if (!state.homeTags.length) return "添加标签";
+  if (state.homeTags.length <= 2) return state.homeTags.join("、");
+  return `${state.homeTags.slice(0, 2).join("、")}等${state.homeTags.length}项`;
+}
+
+function homeTagsPopover() {
+  return `
+    <section class="home-meta-popover tags-popover" aria-label="选择标签">
+      <div class="home-meta-popover-head"><strong>添加标签</strong><small>可多选</small></div>
+      <div class="home-meta-options">${HOME_REVIEW_TAGS.map((tag) => `<button type="button" class="${state.homeTags.includes(tag) ? "selected" : ""}" data-home-tag="${escapeHtml(tag)}" aria-pressed="${state.homeTags.includes(tag)}">${escapeHtml(tag)}</button>`).join("")}</div>
+      <button class="home-meta-done" type="button" data-home-meta-done>完成</button>
+    </section>
+  `;
+}
+
+function homeScenePopover(mode) {
+  return `
+    <section class="home-meta-popover scene-popover" aria-label="选择情境">
+      <div class="home-meta-popover-head"><strong>选择情境</strong><small>用于匹配复盘结构</small></div>
+      <div class="home-meta-options">${scenes[mode].map((scene) => `<button type="button" class="${state.scene === scene ? "selected" : ""}" data-home-scene="${escapeHtml(scene)}" aria-pressed="${state.scene === scene}">${escapeHtml(scene)}</button>`).join("")}</div>
+    </section>
+  `;
+}
+
+function homeReviewContextSummary() {
+  const parts = [`情境：${state.scene}`];
+  if (state.homeTags.length) parts.push(`标签：${state.homeTags.join("、")}`);
+  return parts.join(" · ");
+}
+
+function reviewSetupPage() {
+  const method = currentAdvancedMethod();
+  return shell(`
+    <main class="content-page review-setup-page">
+      ${pageHeader("选择复盘方式", "home")}
+      <p class="setup-intro">先确认复盘类型和场景，再选择适合的整理方式。</p>
+      ${reviewContextControls(state.mode)}
+      <div class="review-context-summary">${escapeHtml(homeReviewContextSummary())}</div>
+      ${reviewStyleControls()}
+      ${state.reviewStyle === "advanced" ? advancedMethodPicker() : ""}
+      <section class="input-panel review-workbench">
+        <div class="workbench-head">
+          <div><span>${state.reviewStyle === "quick" ? "快速复盘" : `高级复盘 · ${escapeHtml(method.title)}`}</span><p>${state.reviewStyle === "quick" ? "用四个基本问题，把经历变成下一次可执行的行动。" : escapeHtml(method.description)}</p></div>
+          <button class="text-button" data-route="home">编辑原始描述</button>
+        </div>
+        ${structuredDraftForm(state.mode)}
+        <div class="input-footer">
+          <strong>${state.reviewStyle === "quick" ? "默认模板会生成你的行动卡。" : `将以「${escapeHtml(method.title)}」整理本次复盘。`}</strong>
+          <button class="ghost-button" data-home-ai ${state.loading ? "disabled" : ""}>${state.loading ? "整理中..." : "AI 生成"}</button>
+          <button class="primary-button" data-start-manual>生成行动卡 ${icons.chevron}</button>
+        </div>
+      </section>
+    </main>
+  `);
+}
+
+function reviewStyleControls() {
+  return `
+    <div class="review-style-switch" role="tablist" aria-label="复盘方式">
+      <button class="${state.reviewStyle === "quick" ? "active" : ""}" data-review-style="quick" role="tab" aria-selected="${state.reviewStyle === "quick"}">
+        <span class="style-mark">01</span><span><b>快速复盘</b><small>默认模板 · 4 个关键问题</small></span>
+      </button>
+      <button class="${state.reviewStyle === "advanced" ? "active" : ""}" data-review-style="advanced" role="tab" aria-selected="${state.reviewStyle === "advanced"}">
+        <span class="style-mark">02</span><span><b>高级复盘</b><small>选择一个方法，换一种视角看问题</small></span>
+      </button>
+    </div>
+  `;
+}
+
+function advancedMethodPicker() {
+  return `
+    <section class="advanced-method-picker" aria-label="高级复盘方法">
+      <div class="picker-head"><span>选择方法</span><p>不同方法只改变提问方式，原始描述始终保留。</p></div>
+      <div class="method-choice-grid">
+        ${ADVANCED_METHODS.map((method) => `
+          <button class="method-choice ${state.advancedMethodId === method.id ? "selected" : ""}" data-advanced-method="${method.id}">
+            <span class="method-choice-art ${method.art}" aria-hidden="true">${methodIcon(method.art)}</span>
+            <span><b>${escapeHtml(method.title)}</b><small>${escapeHtml(method.tag)}</small></span>
+          </button>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function structuredDraftForm(mode) {
+  if (state.reviewStyle === "advanced") return advancedStructuredDraftForm();
   const fields = currentDraftFields();
   const mainLabel = mode === "event" ? "发生了什么" : "我在担心什么";
   const mainPlaceholder = mode === "event"
@@ -1368,6 +1843,27 @@ function structuredDraftForm(mode) {
   `;
 }
 
+function advancedStructuredDraftForm() {
+  const method = currentAdvancedMethod();
+  const fields = currentAdvancedFields();
+  return `
+    <div class="structured-draft advanced-draft">
+      <label class="draft-field draft-field-main source-summary">
+        <span>本次描述</span>
+        <textarea data-draft maxlength="1200" placeholder="写下发生了什么。">${escapeHtml(state.draft)}</textarea>
+      </label>
+      <div class="draft-field-grid">
+        ${method.prompts.map(([key, label, placeholder]) => `
+          <label class="draft-field">
+            <span>${escapeHtml(label)}</span>
+            <textarea data-advanced-field="${key}" maxlength="800" placeholder="${escapeHtml(placeholder)}">${escapeHtml(fields[key] || "")}</textarea>
+          </label>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
 function reviewContextControls(mode) {
   const sceneLabel = mode === "event" ? "主要场景" : "焦虑场景";
   return `
@@ -1388,18 +1884,48 @@ function reviewContextControls(mode) {
 }
 
 function recentPanel() {
+  const recent = store.records.slice(0, 3);
   return `
     <article class="panel recent-panel">
       <div class="panel-head"><h2>最近复盘</h2><button data-tab="records">查看全部 ${icons.chevron}</button></div>
       <div class="recent-list">
-        ${store.records.slice(0, 5).map((record, index) => `
+        ${recent.length ? recent.map((record, index) => `
           <button class="recent-item" data-detail="${record.id}">
             <span class="recent-icon tone-${index % 2}">${record.type === "event" ? icons.note : "❤"}</span>
             <span><strong>${record.title}</strong><small>${typeText(record.type)} · ${record.scene}</small></span>
             <em>${record.shortDate}</em>
           </button>
-        `).join("")}
+        `).join("") : `
+          <div class="panel-empty-state">
+            <span>✦</span><strong>还没有复盘记录</strong>
+            <small>写下第一件值得回看的事。</small>
+            <button data-new-review>开始第一次复盘</button>
+          </div>
+        `}
       </div>
+    </article>
+  `;
+}
+
+function homeInsightPanel() {
+  const start = weekStartMonday();
+  const end = addDays(start, 7);
+  const weekRecords = store.records.filter((record) => {
+    const date = new Date(record.date || record.createdAt || "");
+    return !Number.isNaN(date.getTime()) && date >= start && date < end;
+  }).length;
+  const pending = store.calibrations.filter((card) => card.status === "pending").length;
+  const metrics = [
+    ["本周复盘", `${weekRecords} 次`, Math.min(100, weekRecords * 25)],
+    ["方法沉淀", `${store.methods.length} 张`, Math.min(100, store.methods.length * 20)],
+    ["焦虑待验证", `${pending} 张`, pending ? Math.min(100, 35 + pending * 15) : 0],
+  ];
+  return `
+    <article class="panel home-mood-panel">
+      <h2>成长概览 <span>⌁</span></h2>
+      ${metrics.map(([label, value, progress]) => `
+        <div class="mood-insight-row"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b><i style="--insight-progress:${progress}%"></i></div>
+      `).join("")}
     </article>
   `;
 }
@@ -1520,29 +2046,13 @@ function resultPage() {
       <div class="action-row wrap">
         <button class="ghost-button" data-follow-up="${record.id}" ${state.followUpLoading ? "disabled" : ""}>${state.followUpLoading ? "追问中..." : "继续追问"}</button>
         ${state.mode === "event"
-          ? `<button class="primary-button" data-save-record-ask-method ${state.saving ? "disabled" : ""}>${state.saving ? "保存中..." : "保存记录"}</button>`
-          : `<button class="primary-button" data-save-bundle="calibration" ${state.saving ? "disabled" : ""}>${state.saving ? "保存中..." : "保存记录"}</button>`}
+          ? `<button class="ghost-button" data-save-bundle="records" ${state.saving ? "disabled" : ""}>仅保存记录</button>
+             <button class="primary-button" data-save-bundle="methods" ${state.saving ? "disabled" : ""}>${state.saving ? "保存中..." : "保存并沉淀方法"}</button>`
+          : `<button class="primary-button" data-save-bundle="calibration" ${state.saving ? "disabled" : ""}>${state.saving ? "保存中..." : "保存并创建验证卡"}</button>`}
       </div>
       ${state.followUp ? followUpPanel(state.followUp) : ""}
-      ${state.saveDialogOpen ? saveMethodDialog() : ""}
     </main>
   `);
-}
-
-function saveMethodDialog() {
-  return `
-    <div class="modal-backdrop" role="presentation">
-      <section class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="save-method-title">
-        <div class="modal-mark">${icons.bookmark}</div>
-        <h2 id="save-method-title">是否保存至方法库？</h2>
-        <p>保存到方法库后，这张行动卡会出现在方法库里，方便下次遇到类似情况时复用。</p>
-        <div class="modal-actions">
-          <button class="secondary-button" data-skip-method-library>不保存</button>
-          <button class="primary-button" data-save-record-method ${state.saving ? "disabled" : ""}>保存</button>
-        </div>
-      </section>
-    </div>
-  `;
 }
 
 function followUpPanel(followUp) {
@@ -1829,19 +2339,34 @@ function pageIntro(title, subtitle) {
   `;
 }
 
+function compactSearch(placeholder) {
+  return `
+    <label class="compact-page-search">
+      <input data-search value="${escapeHtml(state.query)}" placeholder="${escapeHtml(placeholder)}" />
+      <button type="button" data-search-submit aria-label="搜索">${icons.search}</button>
+    </label>
+  `;
+}
+
+function libraryToolbar(title, actionLabel = "新建复盘", mode = "") {
+  return `
+    <header class="library-toolbar">
+      <h1>${escapeHtml(title)}</h1>
+      <div class="library-toolbar-actions">
+        <button class="library-cta" data-new-review ${mode ? `data-new-review-mode="${mode}"` : ""}>${escapeHtml(actionLabel)} ${icons.chevron}</button>
+      </div>
+    </header>
+  `;
+}
+
 function recordsPage() {
-  const typeFilters = ["全部", "事件复盘", "焦虑复盘"];
-  const sceneFilters = ["全部场景", ...fixedSceneTags()];
-  const filtered = store.records.filter((record) => matchesFilter(record, state.filter) && matchesQuery([record.title, record.scene, record.conclusion]));
+  const timelineFilters = ["全部", "工作", "学习", "生活", "人际", "情感", "面试"];
+  const filtered = store.records.filter((record) => matchesFilter(record, state.filter) && matchesQuery(searchRecordValues(record)));
   return shell(`
     <main class="content-page library-page records-library-page">
-      ${pageIntro("我的记录", "回顾每一次复盘，看到自己的成长轨迹")}
-      <div class="library-filter-stack">
-        ${filterRow(typeFilters)}
-        <div class="library-filter-rule"></div>
-        ${filterRow(sceneFilters)}
-      </div>
-      <div class="card-list">${filtered.map(recordCard).join("") || emptyState("没有找到匹配的记录")}</div>
+      ${libraryToolbar("我的记录")}
+      <div class="records-filter-row">${filterRow(timelineFilters)}</div>
+      <section class="record-timeline">${filtered.map(timelineRecord).join("") || emptyState("没有找到匹配的记录")}</section>
     </main>
   `);
 }
@@ -1858,43 +2383,155 @@ function methodsPage() {
       `);
     }
   }
-  const filters = ["全部", ...fixedSceneTags("event")];
-  const filtered = store.methods.filter((card) => (
-    state.filter === "全部" || card.scenes.includes(state.filter)
-  ) && matchesQuery([card.title, ...card.scenes, methodSourceLabel(card), ...card.steps]));
+  const templateFilters = ["全部", "复盘框架", "思维模型", "情绪管理", "目标行动", "结构表达", "学习成长", "沟通协作", "决策判断"];
+  const personalFilters = ["全部", ...fixedSceneTags("event")];
+  const filters = state.methodView === "mine" ? personalFilters : templateFilters;
+  const selected = filters.includes(state.filter) ? state.filter : "全部";
+  const templates = ADVANCED_METHODS.filter((method) => (
+    selected === "全部" || method.category === selected || method.tag === selected
+  ) && matchesQuery([method.title, method.category, method.tag, method.description]));
+  const personalMethods = store.methods.filter((method) => (
+    selected === "全部" || method.scenes.includes(selected)
+  ) && matchesQuery(searchMethodValues(method)));
   return shell(`
     <main class="content-page library-page methods-library-page">
-      ${pageIntro("方法库", "沉淀有效方法，在未来的类似场景中复用")}
-      ${filterRow(filters)}
-      <div class="method-grid">${filtered.map(methodCard).join("") || emptyState("没有找到匹配的方法卡")}</div>
+      ${libraryToolbar("方法库", "开始事件复盘", "event")}
+      <div class="library-view-tabs" role="tablist" aria-label="方法库内容">
+        <button class="${state.methodView === "templates" ? "active" : ""}" data-method-view="templates" role="tab" aria-selected="${state.methodView === "templates"}">复盘方法 <span>${ADVANCED_METHODS.length}</span></button>
+        <button class="${state.methodView === "mine" ? "active" : ""}" data-method-view="mine" role="tab" aria-selected="${state.methodView === "mine"}">我的方法 <span>${store.methods.length}</span></button>
+      </div>
+      <div class="method-library-filters">${filterRow(filters, selected)}</div>
+      ${state.methodView === "templates"
+        ? `<div class="method-template-grid">${templates.map(methodTemplateCard).join("") || emptyState("没有找到匹配的方法")}</div>`
+        : `<div class="method-grid personal-method-grid">${personalMethods.map(methodCard).join("") || personalMethodsEmptyState()}</div>`}
     </main>
   `);
 }
 
+function personalMethodsEmptyState() {
+  return `
+    <article class="library-empty-state">
+      <span>✦</span><h2>还没有沉淀个人方法</h2>
+      <p>完成一次事件复盘后，选择“保存并沉淀方法”，可复用的方法会出现在这里。</p>
+      <button class="primary-button" data-new-review data-new-review-mode="event">开始事件复盘</button>
+    </article>
+  `;
+}
+
 function calibrationPage() {
-  const filters = ["全部", "工作", "学习", "情感", "面试", "人际", "决策", "生活", "其他", "健康", "未来"];
-  const activeFilter = filters.includes(state.filter) ? state.filter : "全部";
-  const cards = calibrationCardsForPage().filter((card) => (
-    card.status === state.calibrationTab
-    && (activeFilter === "全部" || card.scene === activeFilter)
-    && matchesQuery([card.worry, card.scene, card.calibrationConclusion])
-  ));
+  const cards = calibrationCardsForPage();
+  const pending = cards.filter((card) => card.status === "pending");
+  const verified = cards.filter((card) => card.status === "verified");
+  const week = calibrationWeekState();
+  const coreFeelings = ["紧张不安", "思绪纷乱", "压力较大", "胸闷烦躁", "身体疲惫"];
+  const extraFeelings = ["难以入睡", "心跳加快", "注意涣散", "害怕失败"];
+  const feelings = state.calibrationSession.extraOpen ? [...coreFeelings, ...extraFeelings] : coreFeelings;
+  const checkins = normalizedCalibrationCheckins();
   return shell(`
-    <main class="content-page">
-      <h1 class="list-title">焦虑校准</h1>
-      <div class="flow-tabs small-tabs"><button class="${state.calibrationTab === "pending" ? "active" : ""}" data-cal-tab="pending">待验证</button><button class="${state.calibrationTab === "verified" ? "active" : ""}" data-cal-tab="verified">已验证</button></div>
-      ${filterRow(filters, activeFilter)}
-      <div class="card-list">${cards.map(calibrationCard).join("") || emptyState("没有找到匹配的校准卡")}</div>
+    <main class="content-page calibration-visual-page">
+      <header class="calibration-toolbar">
+        <div><h1>情绪与焦虑校准 <span>⌁</span></h1><p>先照顾此刻的感受，再用事实验证担心。</p></div>
+        <div class="calibration-view-switch" role="tablist" aria-label="校准内容">
+          <button class="${state.calibrationView === "checkin" ? "active" : ""}" data-calibration-view="checkin" role="tab" aria-selected="${state.calibrationView === "checkin"}">此刻安定</button>
+          <button class="${state.calibrationView === "cards" ? "active" : ""}" data-calibration-view="cards" role="tab" aria-selected="${state.calibrationView === "cards"}">焦虑验证 <span>${pending.length}</span></button>
+        </div>
+      </header>
+      ${state.calibrationView === "checkin"
+        ? calibrationCheckinView({ week, feelings, checkins })
+        : calibrationCardsView(pending, verified)}
     </main>
   `);
+}
+
+function moodFaceIcon(mood) {
+  const expressions = {
+    "很平静": `
+      <path d="M4.5 8c1.2 1.2 2.4 1.2 3.6 0" />
+      <path d="M15.9 8c1.2 1.2 2.4 1.2 3.6 0" />
+      <path d="M7 13.5c2.6 3.2 7.4 3.2 10 0" />
+    `,
+    "平静": `
+      <circle cx="7" cy="8" r="1" fill="currentColor" stroke="none" />
+      <circle cx="17" cy="8" r="1" fill="currentColor" stroke="none" />
+      <path d="M8 14c2.2 2.2 5.8 2.2 8 0" />
+    `,
+    "一般": `
+      <circle cx="7" cy="8" r="1" fill="currentColor" stroke="none" />
+      <circle cx="17" cy="8" r="1" fill="currentColor" stroke="none" />
+      <path d="M8 15h8" />
+    `,
+    "焦虑": `
+      <path d="M4.5 6.5 8.5 7.5" />
+      <path d="m15.5 7.5 4-1" />
+      <circle cx="7" cy="9.5" r="1" fill="currentColor" stroke="none" />
+      <circle cx="17" cy="9.5" r="1" fill="currentColor" stroke="none" />
+      <path d="M8 17c2.2-2.2 5.8-2.2 8 0" />
+    `,
+    "很焦虑": `
+      <path d="M4.5 7 8.5 5.8" />
+      <path d="m15.5 5.8 4 1.2" />
+      <circle cx="7" cy="9.5" r="1" fill="currentColor" stroke="none" />
+      <circle cx="17" cy="9.5" r="1" fill="currentColor" stroke="none" />
+      <ellipse cx="12" cy="16" rx="3.2" ry="2.2" />
+    `,
+  };
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${expressions[mood] || expressions["一般"]}</svg>`;
+}
+
+function calibrationCheckinView({ week, feelings, checkins }) {
+  const moods = ["很平静", "平静", "一般", "焦虑", "很焦虑"];
+  return `
+      <section class="calibration-hero-grid">
+        <article class="calibration-checkin-card">
+          <h2>此刻的你</h2>
+          <div class="mood-scale" role="group" aria-label="当前情绪">
+            ${moods.map((label) => `<button type="button" class="${state.calibrationSession.mood === label ? "selected" : ""}" data-mood="${label}" aria-label="当前情绪：${label}" aria-pressed="${state.calibrationSession.mood === label}"><i>${moodFaceIcon(label)}</i><span>${label}</span></button>`).join("")}
+          </div>
+          <h3>我感受到</h3>
+          <div class="feeling-tags">${feelings.map((item) => `<button class="${state.calibrationSession.feelings.includes(item) ? "selected" : ""}" data-feeling="${item}" aria-pressed="${state.calibrationSession.feelings.includes(item)}">${item}</button>`).join("")}<button class="${state.calibrationSession.extraOpen ? "selected" : ""}" data-calibration-more aria-label="${state.calibrationSession.extraOpen ? "收起更多感受" : "查看更多感受"}">${state.calibrationSession.extraOpen ? "收起" : "···"}</button></div>
+          <textarea class="calibration-note" data-calibration-note placeholder="写下此刻的感受（可选）…">${escapeHtml(state.calibrationSession.note)}</textarea>
+          <div class="calibration-checkin-actions"><span>${state.calibrationSession.feelings.length ? `已选择 ${state.calibrationSession.feelings.length} 项感受` : "选择感受后完成本次校准"}</span><button data-complete-calibration>完成本次校准</button></div>
+        </article>
+        <article class="breathing-card ${state.breathingActive ? "active" : ""}" data-breathing-phase="${breathingPhaseToken()}">
+          <p>深呼吸</p><button class="breathing-ring" data-breathing-toggle aria-label="${state.breathingActive ? "暂停呼吸练习" : "开始呼吸练习"}"><span class="breathing-ring-copy"><span data-breathing-phase-label>${breathingPhaseCopy()}</span></span></button><small data-breathing-helper>${state.breathingActive ? "跟随圆环的节奏，不用数秒" : "点击呼吸环开始练习"}</small>
+        </article>
+      </section>
+      <section class="calibration-bottom-grid">
+        <article class="calibration-progress-card"><h3>本周校准进度</h3><p>已完成 <b>${week.completed}</b> / 7 天</p><div class="progress-week">${week.days.map((day) => `<span class="${day.completed ? "done" : ""}" title="${day.key}">${day.completed ? "✓" : day.label}</span>`).join("")}</div></article>
+        <article class="calibration-advice-card"><h3>建议练习</h3><strong>舒缓呼吸</strong><p data-breathing-summary>${state.breathingActive ? breathingPhaseCopy() : "约 8 分钟"}</p><button data-breathing-toggle data-breathing-control-icon aria-label="${state.breathingActive ? "暂停呼吸练习" : "开始呼吸练习"}">${state.breathingActive ? "Ⅱ" : "▶"}</button><span>⌁</span></article>
+      </section>
+      <div class="calibration-history-actions"><button class="history-button ${state.calibrationHistoryOpen ? "active" : ""}" data-calibration-history-toggle>◴ ${state.calibrationHistoryOpen ? "收起历史" : "查看情绪记录"}</button></div>
+      ${state.calibrationHistoryOpen ? `<section class="calibration-history-panel"><div class="panel-head"><h2>情绪记录</h2><span>${checkins.length} 次校准</span></div>${checkins.length ? `<div class="checkin-history-list">${checkins.map((item) => `<article><time>${escapeHtml(item.date)}</time><strong>${escapeHtml(item.mood || "未记录")}</strong><p>${escapeHtml((item.feelings || []).join("、") || "未选择感受")}</p>${item.note ? `<small>${escapeHtml(item.note)}</small>` : ""}</article>`).join("")}</div>` : emptyState("还没有完成过情绪校准")}</section>` : ""}
+  `;
+}
+
+function calibrationCardsView(pending, verified) {
+  const showingPending = state.calibrationTab === "pending";
+  const cards = showingPending ? pending : verified;
+  return `
+    <section class="calibration-cards-view">
+      <header class="calibration-cards-head">
+        <div class="calibration-status-tabs" role="tablist" aria-label="焦虑卡状态">
+          <button class="${showingPending ? "active" : ""}" data-cal-tab="pending" role="tab" aria-selected="${showingPending}">待验证 <span>${pending.length}</span></button>
+          <button class="${!showingPending ? "active" : ""}" data-cal-tab="verified" role="tab" aria-selected="${!showingPending}">已验证 <span>${verified.length}</span></button>
+        </div>
+        <button class="primary-button" data-new-review data-new-review-mode="anxiety">记录一次焦虑</button>
+      </header>
+      <p class="calibration-cards-intro">${showingPending ? "到期后回来看事实是否发生，以及实际影响有多大。" : "回看过去的担心，逐步校准对概率和后果的判断。"}</p>
+      <div class="calibration-card-grid">
+        ${cards.map(calibrationCard).join("") || `<article class="library-empty-state"><span>◎</span><h2>${showingPending ? "没有待验证的焦虑卡" : "还没有已验证的记录"}</h2><p>${showingPending ? "从一次焦虑复盘开始，给担心设置验证日期。" : "完成待验证卡后，校准结论会沉淀在这里。"}</p>${showingPending ? `<button class="primary-button" data-new-review data-new-review-mode="anxiety">开始焦虑复盘</button>` : ""}</article>`}
+      </div>
+    </section>
+  `;
 }
 
 function searchPage() {
   const query = state.query.trim();
   const records = query ? store.records.filter((record) => matchesQuery(searchRecordValues(record))) : [];
+  const templates = query ? ADVANCED_METHODS.filter((method) => matchesQuery([method.title, method.category, method.tag, method.description])) : [];
   const methods = query ? store.methods.filter((card) => matchesQuery(searchMethodValues(card))) : [];
   const calibrations = query ? store.calibrations.filter((card) => matchesQuery(searchCalibrationValues(card))) : [];
-  const total = records.length + methods.length + calibrations.length;
+  const total = records.length + templates.length + methods.length + calibrations.length;
   const emptyText = query ? "没有找到匹配的内容" : "输入关键词后按 Enter 搜索";
 
   return shell(`
@@ -1903,7 +2540,8 @@ function searchPage() {
       ${query ? `<p class="record-meta">找到 ${total} 条与「${escapeHtml(query)}」相关的内容</p>` : ""}
       ${total ? `
         ${records.length ? `<section class="search-section"><h2>复盘记录</h2><div class="card-list">${records.map(recordCard).join("")}</div></section>` : ""}
-        ${methods.length ? `<section class="search-section"><h2>方法卡</h2><div class="method-grid">${methods.map(methodCard).join("")}</div></section>` : ""}
+        ${templates.length ? `<section class="search-section"><h2>复盘方法</h2><div class="method-template-grid search-template-grid">${templates.map(methodTemplateCard).join("")}</div></section>` : ""}
+        ${methods.length ? `<section class="search-section"><h2>我的方法</h2><div class="method-grid">${methods.map(methodCard).join("")}</div></section>` : ""}
         ${calibrations.length ? `<section class="search-section"><h2>校准卡</h2><div class="card-list">${calibrations.map(calibrationCard).join("")}</div></section>` : ""}
       ` : emptyState(emptyText)}
     </main>
@@ -1912,6 +2550,9 @@ function searchPage() {
 
 function detailPage() {
   const record = store.records.find((item) => item.id === state.selectedRecordId) || store.records[0];
+  if (!record) {
+    return shell(`<main class="content-page narrow-page">${pageHeader("详情", "records")}${emptyState("这条记录不存在或已被删除")}</main>`);
+  }
   const mode = record.type;
   if (state.editingRecordId === record.id) return detailEditPage(record);
   const titleParts = splitDetailTitle(record.title);
@@ -1923,7 +2564,7 @@ function detailPage() {
           <h1>${escapeHtml(titleParts.main)}</h1>
           ${titleParts.aside ? `<b>${escapeHtml(titleParts.aside)}</b>` : ""}
         </div>
-        <p><span>${escapeHtml(record.scene)}</span><span>${displayDate(record.date, { full: true })}</span></p>
+        <p><span>${escapeHtml(record.scene)}</span>${record.tags.length ? `<span>${escapeHtml(record.tags.join(" · "))}</span>` : ""}<span>${displayDate(record.date, { full: true })}</span></p>
       </section>
       ${fieldGrid([
         ["原始输入", record.rawInput],
@@ -2120,6 +2761,24 @@ function methodStepChips(steps = []) {
   `;
 }
 
+function timelineRecord(record, index) {
+  const iconName = record.type === "anxiety" ? "♡" : index % 3 === 0 ? "▣" : "▤";
+  const date = displayDate(record.date || record.createdAt, { full: true }) || "今天";
+  const tagSummary = record.tags.length ? ` · ${record.tags.slice(0, 2).join("、")}` : "";
+  return `
+    <article class="timeline-record" data-detail="${record.id}">
+      <time>${escapeHtml(date)}</time>
+      <span class="timeline-node"></span>
+      <button class="timeline-record-card" data-detail="${record.id}">
+        <span class="timeline-record-icon">${iconName}</span>
+        <span class="timeline-record-copy"><b>${escapeHtml(record.title)}</b><small>${escapeHtml(record.scene)} · ${record.type === "event" ? "复盘" : "校准"}${escapeHtml(tagSummary)}</small></span>
+        <span class="timeline-status">${escapeHtml(record.status)}</span>
+        <span class="timeline-arrow">${icons.chevron}</span>
+      </button>
+    </article>
+  `;
+}
+
 function recordCard(record) {
   const mode = record.type;
   return `
@@ -2128,7 +2787,7 @@ function recordCard(record) {
         <div class="record-title-stack">
           <div class="library-card-kicker">
             ${cardBadge(cardTypeLabel(record), mode === "anxiety" ? "soft" : "")}
-            <p class="record-meta">${cardMeta([record.scene, displayDate(record.date, { full: true })])}</p>
+            <p class="record-meta">${cardMeta([record.scene, ...(record.tags || []), displayDate(record.date, { full: true })])}</p>
           </div>
           <h3>${escapeHtml(record.title)}</h3>
         </div>
@@ -2188,6 +2847,17 @@ function methodCard(card) {
   `;
 }
 
+function methodTemplateCard(method) {
+  return `
+    <button class="method-template-card ${method.art}" data-select-advanced-method="${method.id}" title="使用${escapeHtml(method.title)}进行高级复盘">
+      <span class="template-card-top"><b>${escapeHtml(method.title)}</b><i>✧</i></span>
+      <span class="template-card-lines"><i></i><i></i><i></i></span>
+      <span class="template-card-tag">${escapeHtml(method.tag)}</span>
+      <span class="template-card-art" aria-hidden="true">${methodIcon(method.art)}</span>
+    </button>
+  `;
+}
+
 function recordPreviewFields(record, mode) {
   const summary = objectFields(record.summary, summaryTemplates[mode]);
   const resultCard = objectFields(record.resultCard, resultCards[mode].fields);
@@ -2220,17 +2890,16 @@ function methodEditCard(card) {
 function calibrationCard(card) {
   if (state.editingCalibrationId === card.id) return calibrationEditCard(card);
   const verified = card.status === "verified";
+  const dateLabel = card.verificationDate ? displayDate(card.verificationDate, { full: true }) : "未设置日期";
   return `
-    <article class="list-card calibration-card" data-edit-calibration="${card.id}" tabindex="0" title="点击编辑">
-      <div class="card-title-row">
-        <h3>${escapeHtml(card.worry)}</h3>
-        <div class="inline-actions">
-          <button class="text-button danger-text" data-delete-calibration="${card.id}">删除</button>
-        </div>
-      </div>
-      <p>${escapeHtml(card.scene)} · 当时预计概率：${escapeHtml(card.estimatedProbability)}</p>
-      <strong>${verified ? `最终是否发生：${escapeHtml(card.finalResult)}` : `验证日期：${card.verificationDate || "未设置"}`}</strong>
-      ${verified ? `<p>实际影响：${escapeHtml(card.actualImpact)}</p><p>${escapeHtml(card.calibrationConclusion)}</p>` : `<span>待验证</span>`}
+    <article class="list-card calibration-card calibration-library-card" data-edit-calibration="${card.id}" tabindex="0" title="点击编辑">
+      <div class="calibration-card-meta"><span class="status-pill ${verified ? "verified" : "pending"}">${verified ? "已验证" : "待验证"}</span><time>${escapeHtml(dateLabel)}</time></div>
+      <h3>${escapeHtml(card.worry)}</h3>
+      <div class="calibration-facts"><span>${escapeHtml(card.scene)}</span><span>当时预计 ${escapeHtml(card.estimatedProbability || "未填写")}</span></div>
+      ${verified
+        ? `<div class="calibration-result"><strong>${escapeHtml(card.finalResult || "已完成验证")}</strong><p>${escapeHtml(card.calibrationConclusion || "暂未填写校准结论")}</p></div>`
+        : `<div class="calibration-result pending"><strong>等待事实验证</strong><p>到期后记录真实结果和实际影响。</p></div>`}
+      <footer><button class="text-button" data-edit-calibration="${card.id}">${verified ? "查看结论" : "去验证"}</button><button class="text-button danger-text" data-delete-calibration="${card.id}">删除卡片</button></footer>
     </article>
   `;
 }
@@ -2279,6 +2948,7 @@ function searchRecordValues(record) {
     record.rawInput,
     record.conclusion,
     record.note,
+    ...flattenSearchValues(record.tags || []),
     ...flattenSearchValues(record.summary),
     ...flattenSearchValues(record.resultCard),
   ];
@@ -2376,13 +3046,15 @@ function render() {
   }
   app.classList.remove("auth-shell");
   const workspace = app.querySelector(".workspace");
-  const scrollTop = workspace ? workspace.scrollTop : 0;
+  const scrollTop = resetWorkspaceScroll ? 0 : workspace ? workspace.scrollTop : 0;
+  resetWorkspaceScroll = false;
   const activeElement = document.activeElement;
   const activeField = activeElement?.matches?.("[data-search]") ? "search" : "";
   const activeSelectionStart = activeElement?.selectionStart ?? null;
   const activeSelectionEnd = activeElement?.selectionEnd ?? null;
   const routes = {
     home: homePage,
+    reviewSetup: reviewSetupPage,
     eventInput: () => inputPage("event"),
     anxietyInput: () => inputPage("anxiety"),
     summary: summaryPage,
@@ -2533,7 +3205,7 @@ async function saveCalibration(id) {
     state.apiOnline = false;
     notify("校准卡暂时只保存在当前页面");
   }
-  setState({ editingCalibrationId: null });
+  setState({ editingCalibrationId: null, calibrationView: "cards", calibrationTab: card.status === "verified" ? "verified" : "pending" });
 }
 
 function localDeleteRecord(id) {
@@ -2549,18 +3221,24 @@ function localDeleteRecord(id) {
 }
 
 function localDeleteMethod(id) {
+  const deletedCard = store.methods.find((item) => item.id === id);
   store.methods = store.methods.filter((item) => item.id !== id);
+  const sourceRecord = deletedCard ? store.records.find((record) => record.id === deletedCard.sourceReviewId) : null;
+  if (sourceRecord) {
+    sourceRecord.savedToMethodLibrary = false;
+    sourceRecord.status = sourceRecord.savedToCalibration ? "已加入校准" : "已保存";
+  }
   if (state.editingMethodId === id) state.editingMethodId = null;
 }
 
 function localDeleteCalibration(id) {
   const deletedCard = store.calibrations.find((item) => item.id === id) || {};
   const sourceReviewId = deletedCard.sourceReviewId || String(id || "").replace(/^derived-calibration-/, "");
-  const sourceRecord = findRecordForCalibration(deletedCard, id);
+  store.calibrations = store.calibrations.filter((item) => item.id !== id && item.sourceReviewId !== sourceReviewId);
+  const sourceRecord = store.records.find((record) => record.id === sourceReviewId);
   if (sourceRecord) {
-    localDeleteRecord(sourceRecord.id);
-  } else {
-    store.calibrations = store.calibrations.filter((item) => item.id !== id && item.sourceReviewId !== sourceReviewId);
+    sourceRecord.savedToCalibration = false;
+    sourceRecord.status = sourceRecord.savedToMethodLibrary ? "已沉淀方法" : "已保存";
   }
   if (state.editingCalibrationId === id) state.editingCalibrationId = null;
 }
@@ -2569,17 +3247,14 @@ function confirmDeleteResource(kind) {
   const label = kind === "record" ? "这条记录" : kind === "method" ? "这张方法卡" : "这张校准卡";
   const extra = kind === "record"
     ? "删除记录也会移除它沉淀出的关联方法卡或校准卡。"
-    : kind === "calibration"
-      ? "删除校准卡也会移除对应记录。"
+    : kind === "method" || kind === "calibration"
+      ? "源复盘记录会保留。"
       : "";
   return window.confirm(`确定要删除${label}吗？${extra ? `\n${extra}` : ""}`);
 }
 
 async function deleteResource(kind, id) {
   if (!confirmDeleteResource(kind)) return;
-  const linkedRecord = kind === "calibration"
-    ? findRecordForCalibration(store.calibrations.find((item) => item.id === id) || {}, id)
-    : null;
   const pathByKind = {
     record: `/reviews/${id}`,
     method: `/methods/${id}`,
@@ -2592,9 +3267,6 @@ async function deleteResource(kind, id) {
   };
   try {
     await request(pathByKind[kind], { method: "DELETE" });
-    if (kind === "calibration" && linkedRecord?.id) {
-      await request(`/reviews/${linkedRecord.id}`, { method: "DELETE" });
-    }
     state.apiOnline = true;
   } catch (error) {
     if (handleAuthError(error)) return;
@@ -2603,8 +3275,8 @@ async function deleteResource(kind, id) {
   localDeleteByKind[kind](id);
   const route = kind === "record" ? "records" : kind === "method" ? "methods" : "calibration";
   const tab = kind === "record" ? "records" : kind === "method" ? "methods" : "calibration";
-  setState({ route, tab });
-  notify(kind === "record" ? "记录已删除" : kind === "method" ? "方法卡已删除" : "校准卡和对应记录已删除");
+  setState({ route, tab, methodView: kind === "method" ? "mine" : state.methodView, calibrationView: kind === "calibration" ? "cards" : state.calibrationView });
+  notify(kind === "record" ? "记录及关联卡片已删除" : kind === "method" ? "方法卡已删除，源记录已保留" : "校准卡已删除，源记录已保留");
 }
 
 async function requestFollowUp(reviewId) {
@@ -2658,13 +3330,20 @@ function buildLocalFollowUp(record) {
 
 app.addEventListener("click", async (event) => {
   const notificationArea = event.target.closest(".notification-wrap");
+  const homeMetaArea = event.target.closest(".home-meta-control");
+  const shouldCloseHomeMeta = Boolean(state.homeMetaOpen && !homeMetaArea);
   if (state.notificationsOpen && !notificationArea) {
     setState({ notificationsOpen: false });
+  }
+
+  if (shouldCloseHomeMeta) {
+    state.homeMetaOpen = "";
   }
 
   const target = event.target.closest("button, article[data-detail], article[data-edit-method], article[data-edit-calibration]");
   if (!target) {
     if (state.notificationsOpen && notificationArea) setState({ notificationsOpen: false });
+    if (shouldCloseHomeMeta) render();
     return;
   }
 
@@ -2699,6 +3378,7 @@ app.addEventListener("click", async (event) => {
       notificationsOpen: false,
       route: "calibration",
       tab: "calibration",
+      calibrationView: "cards",
       calibrationTab: "pending",
       editingCalibrationId: target.dataset.openCalibration,
     });
@@ -2714,8 +3394,36 @@ app.addEventListener("click", async (event) => {
     return;
   }
 
+  if (target.dataset.newReview !== undefined) {
+    beginNewReview(target.dataset.newReviewMode || state.mode);
+    return;
+  }
+
   if (target.dataset.homeAnalyze !== undefined) {
-    startManualReview();
+    state.homeMetaOpen = "";
+    startReviewSetup();
+    return;
+  }
+
+  if (target.dataset.homeMeta) {
+    setState({ homeMetaOpen: state.homeMetaOpen === target.dataset.homeMeta ? "" : target.dataset.homeMeta });
+    return;
+  }
+
+  if (target.dataset.homeTag) {
+    const tag = target.dataset.homeTag;
+    const selected = state.homeTags.includes(tag);
+    setState({ homeTags: selected ? state.homeTags.filter((item) => item !== tag) : [...state.homeTags, tag] });
+    return;
+  }
+
+  if (target.dataset.homeScene) {
+    setState({ scene: target.dataset.homeScene, homeMetaOpen: "" });
+    return;
+  }
+
+  if (target.dataset.homeMetaDone !== undefined) {
+    setState({ homeMetaOpen: "" });
     return;
   }
 
@@ -2731,6 +3439,68 @@ app.addEventListener("click", async (event) => {
 
   if (target.dataset.analyze !== undefined) {
     analyzeDraft();
+    return;
+  }
+
+  if (target.dataset.mood) {
+    setState({ calibrationSession: { ...state.calibrationSession, mood: target.dataset.mood } });
+    return;
+  }
+
+  if (target.dataset.feeling) {
+    const feeling = target.dataset.feeling;
+    const selected = state.calibrationSession.feelings.includes(feeling);
+    const feelings = selected
+      ? state.calibrationSession.feelings.filter((item) => item !== feeling)
+      : [...state.calibrationSession.feelings, feeling];
+    setState({ calibrationSession: { ...state.calibrationSession, feelings } });
+    return;
+  }
+
+  if (target.dataset.calibrationMore !== undefined) {
+    setState({ calibrationSession: { ...state.calibrationSession, extraOpen: !state.calibrationSession.extraOpen } });
+    return;
+  }
+
+  if (target.dataset.completeCalibration !== undefined) {
+    completeCalibrationCheckin();
+    return;
+  }
+
+  if (target.dataset.breathingToggle !== undefined) {
+    toggleBreathingExercise();
+    return;
+  }
+
+  if (target.dataset.calibrationHistoryToggle !== undefined) {
+    setState({ calibrationHistoryOpen: !state.calibrationHistoryOpen });
+    return;
+  }
+
+  if (target.dataset.calibrationView) {
+    if (target.dataset.calibrationView !== "checkin") stopBreathingExercise({ reset: true });
+    setState({ calibrationView: target.dataset.calibrationView, editingCalibrationId: null });
+    return;
+  }
+
+  if (target.dataset.reviewStyle) {
+    setState({ reviewStyle: target.dataset.reviewStyle });
+    return;
+  }
+
+  if (target.dataset.advancedMethod) {
+    setState({ reviewStyle: "advanced", advancedMethodId: target.dataset.advancedMethod });
+    return;
+  }
+
+  if (target.dataset.selectAdvancedMethod) {
+    if (state.route === "methods" || state.route === "search") clearCompletedReview();
+    setState({ reviewStyle: "advanced", advancedMethodId: target.dataset.selectAdvancedMethod, route: "reviewSetup", tab: "review" });
+    return;
+  }
+
+  if (target.dataset.methodView) {
+    setState({ methodView: target.dataset.methodView, filter: "全部", editingMethodId: null });
     return;
   }
 
@@ -2751,21 +3521,6 @@ app.addEventListener("click", async (event) => {
 
   if (target.dataset.saveCalibration) {
     await saveCalibration(target.dataset.saveCalibration);
-    return;
-  }
-
-  if (target.dataset.saveRecordAskMethod !== undefined) {
-    await persistCurrentBundle("records", { askMethodLibrary: true });
-    return;
-  }
-
-  if (target.dataset.skipMethodLibrary !== undefined) {
-    setState({ saveDialogOpen: false, route: "records", tab: "records" });
-    return;
-  }
-
-  if (target.dataset.saveRecordMethod !== undefined) {
-    await persistCurrentBundle("methods");
     return;
   }
 
@@ -2834,6 +3589,7 @@ app.addEventListener("click", async (event) => {
     if (record) {
       state.mode = record.type;
       state.scene = record.scene;
+      state.homeTags = [...(record.tags || [])];
       state.draft = record.rawInput;
       analyzeDraft();
     }
@@ -2848,12 +3604,14 @@ app.addEventListener("click", async (event) => {
   }
 
   if (target.dataset.route) {
+    if (target.dataset.route !== "calibration") stopBreathingExercise({ reset: true });
     setState(clearEditingState({ route: target.dataset.route, tab: tabByRoute[target.dataset.route] || state.tab }));
     return;
   }
 
   if (target.dataset.tab) {
     const tab = target.dataset.tab;
+    if (tab !== "calibration") stopBreathingExercise({ reset: true });
     setState(clearEditingState({ tab, route: routeByTab[tab], filter: "全部" }));
     return;
   }
@@ -2869,7 +3627,7 @@ app.addEventListener("click", async (event) => {
   }
 
   if (target.dataset.calTab) {
-    setState({ calibrationTab: target.dataset.calTab });
+    setState({ calibrationView: "cards", calibrationTab: target.dataset.calTab, editingCalibrationId: null });
     return;
   }
 
@@ -2938,6 +3696,14 @@ app.addEventListener("input", (event) => {
     state.draftFields[state.mode][event.target.dataset.draftField] = event.target.value;
   }
 
+  if (event.target.matches("[data-advanced-field]")) {
+    currentAdvancedFields()[event.target.dataset.advancedField] = event.target.value;
+  }
+
+  if (event.target.matches("[data-calibration-note]")) {
+    state.calibrationSession.note = event.target.value;
+  }
+
   if (event.target.matches(".structured-draft textarea")) {
     resizeTextareaToContent(event.target);
   }
@@ -2987,6 +3753,7 @@ window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change",
   }
 });
 window.addEventListener("popstate", () => applyRouteFromLocation({ shouldRender: true }));
+window.addEventListener("hashchange", () => applyRouteFromLocation({ shouldRender: true }));
 
 render();
 hydrateFromBackend();

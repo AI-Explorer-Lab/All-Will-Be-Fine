@@ -57,17 +57,26 @@ class ReviewApiBoundaryTest(unittest.TestCase):
     def test_save_record_without_method_card_keeps_method_library_empty(self):
         user = UserContext(user_id=f"api-record-only-user-{uuid4().hex}")
         response = review_controller.analyze_review(
-            {"type": "event", "scene": "工作", "raw_input": "只保存记录，不进入方法库", "persist": False},
+            {
+                "type": "event",
+                "scene": "工作",
+                "tags": ["习惯调整", "无效标签", "习惯调整"],
+                "raw_input": "只保存记录，不进入方法库",
+                "persist": False,
+            },
             user=user,
         )
         payload = response["data"]
+        self.assertEqual(payload["record"]["tags"], ["习惯调整"])
         payload["method_card"] = None
         payload["record"]["saved_to_method_library"] = False
 
         saved = review_controller.save_review_bundle(payload, user=user)
 
         self.assertTrue(saved["success"])
-        self.assertEqual(len(review_controller.list_reviews(user=user)["data"]), 1)
+        records = review_controller.list_reviews(user=user)["data"]
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["tags"], ["习惯调整"])
         self.assertEqual(review_controller.list_methods(user=user)["data"], [])
 
     def test_empty_user_lists_start_empty(self):
@@ -93,6 +102,8 @@ class ReviewApiBoundaryTest(unittest.TestCase):
         method_response = review_controller.delete_method(method_id, user=delete_user)
         self.assertTrue(method_response["success"])
         self.assertNotIn(method_id, [item["id"] for item in review_controller.list_methods(user=delete_user)["data"]])
+        event_record = review_controller.get_review(event["data"]["record"]["id"], user=delete_user)["data"]
+        self.assertFalse(event_record["saved_to_method_library"])
 
         anxiety = review_controller.analyze_review(
             {"type": "anxiety", "scene": "面试", "raw_input": "需要删除的焦虑校准"},
@@ -105,6 +116,8 @@ class ReviewApiBoundaryTest(unittest.TestCase):
             calibration_id,
             [item["id"] for item in review_controller.list_calibrations(user=delete_user)["data"]],
         )
+        anxiety_record = review_controller.get_review(anxiety["data"]["record"]["id"], user=delete_user)["data"]
+        self.assertFalse(anxiety_record["saved_to_calibration"])
 
         review_id = event["data"]["record"]["id"]
         review_response = review_controller.delete_review(review_id, user=delete_user)

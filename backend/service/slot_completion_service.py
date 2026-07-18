@@ -406,11 +406,11 @@ def apply_provided_fields(
         }
     )
     primary_key = "我在担心什么" if review_type == ANXIETY_TYPE else "发生了什么"
-    for source_key, (target_key, _list_hint) in mapping.items():
+    for source_key, (target_key, list_hint) in mapping.items():
         value = fields.get(source_key)
         if value in (None, "", []):
             continue
-        normalized = _provided_text(value)
+        normalized = _provided_list(value) if list_hint else _provided_text(value)
         assisted_value = {
             "user_content": normalized,
             "ai_suggestion": normalize_slot_value(ai_suggestions.get(source_key, "")),
