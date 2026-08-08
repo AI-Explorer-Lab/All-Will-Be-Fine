@@ -1384,6 +1384,102 @@ button:active {
   gap: 14px;
 }
 
+.result-source-card,
+.result-card-section {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--paper) 88%, transparent);
+  box-shadow: var(--shadow-soft);
+}
+
+.result-source-card {
+  padding: 20px 22px;
+  margin-bottom: 18px;
+}
+
+.result-source-head,
+.result-card-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.result-eyebrow {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--orange-dark);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.result-source-card h2,
+.result-card-heading h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 20px;
+}
+
+.result-source-card p {
+  max-width: 72ch;
+  margin: 16px 0 8px;
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1.8;
+}
+
+.result-source-card p p {
+  margin: 0;
+}
+
+.result-source-card small,
+.result-card-heading p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.result-source-card small {
+  display: block;
+}
+
+.result-source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.result-source-meta span {
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--paper-warm);
+  font-size: 12px;
+}
+
+.result-card-section {
+  padding: 20px 22px 22px;
+}
+
+.result-card-heading {
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.result-card-heading p {
+  max-width: 34ch;
+  margin: 0;
+  text-align: right;
+}
+
+.result-card-section .field-grid {
+  margin-top: 0;
+}
+
 .detail-page .field-grid {
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 16px;
@@ -5735,6 +5831,21 @@ body {
   .library-page-head p,
   .calibration-toolbar p {
     font-size: 16px;
+  }
+
+  .result-source-head,
+  .result-card-heading {
+    display: block;
+  }
+
+  .result-source-meta {
+    justify-content: flex-start;
+    margin-top: 12px;
+  }
+
+  .result-card-heading p {
+    margin-top: 10px;
+    text-align: left;
   }
 
   .home-insight-grid .week-days b {

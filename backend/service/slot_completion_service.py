@@ -423,8 +423,6 @@ def apply_provided_fields(
     slots["result_card"] = result_card
     if review_type == EVENT_TYPE and isinstance(slots.get("method_card"), dict):
         method_card = slots["method_card"]
-        if fields.get("需要改进的地方"):
-            method_card["trigger"] = str(fields["需要改进的地方"]).strip()
         if fields.get("下次怎么做"):
             method_card["steps"] = _provided_list(fields["下次怎么做"])
         if fields.get("提醒自己"):

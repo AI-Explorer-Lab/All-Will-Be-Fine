@@ -189,7 +189,7 @@ class ReviewService:
                 result_card=slots.get("result_card") or {},
                 created_at=now,
                 updated_at=now,
-                saved_to_calibration=True,
+                saved_to_calibration=request.persist,
             )
             calibration_slots = slots.get("calibration_card") or {}
             calibration = CalibrationCard(
@@ -214,7 +214,7 @@ class ReviewService:
             result_card=slots.get("result_card") or {},
             created_at=now,
             updated_at=now,
-            saved_to_method_library=True,
+            saved_to_method_library=request.persist,
         )
         method_slots = slots.get("method_card") or {}
         method = MethodCard(

@@ -44,6 +44,8 @@ class ReviewApiBoundaryTest(unittest.TestCase):
         )
 
         self.assertTrue(response["success"])
+        self.assertFalse(response["data"]["record"]["saved_to_method_library"])
+        self.assertEqual(response["data"]["method_card"]["trigger"], "准备开始处理类似事情前")
         self.assertEqual(review_controller.list_reviews(user=preview_user)["data"], [])
 
         saved = review_controller.save_review_bundle(response["data"], user=preview_user)

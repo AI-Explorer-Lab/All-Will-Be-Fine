@@ -68,6 +68,7 @@ class ReviewServiceTest(unittest.TestCase):
         self.assertIn("完成标准", next_steps["ai_suggestion"])
         self.assertEqual(bundle.method_card.steps, ["先复述需求", "再确认验收标准"])
         self.assertEqual(bundle.method_card.reminder, "先确认，再动手")
+        self.assertEqual(bundle.method_card.trigger, "准备开始处理类似事情前")
 
     def test_ai_suggestion_does_not_replace_user_content(self):
         class SuggestionCompleter:

@@ -686,12 +686,30 @@ function normalizeRecord(record) {
     tags: (record.tags || []).filter((tag) => HOME_REVIEW_TAGS.includes(tag)),
     summary: record.summary || {},
     resultCard,
-    conclusion: record.conclusion || firstValue(resultCard) || "已生成一张可执行的复盘卡。",
+    conclusion: record.conclusion || deriveReviewConclusion({ ...record, type, resultCard }),
     note: record.note || record.myNote || "",
     status: savedToCalibration ? "已加入校准" : savedToMethodLibrary ? "已沉淀方法" : "已保存",
     savedToMethodLibrary,
     savedToCalibration,
   };
+}
+
+function deriveReviewConclusion(record = {}) {
+  const mode = record.type || "event";
+  const summary = record.summary || {};
+  const resultCard = record.resultCard || record.result_card || {};
+  const labels = mode === "event"
+    ? ["需要改进的地方", "下次怎么做"]
+    : ["现实检查", "我能做什么"];
+  for (const label of labels) {
+    const rawValue = summary[label] ?? resultCard[label];
+    const value = effectiveFieldValue(rawValue);
+    const text = Array.isArray(value)
+      ? value.map((item) => String(item || "").trim()).filter(Boolean).join("；")
+      : String(value || "").trim();
+    if (text) return text;
+  }
+  return firstValue(resultCard) || "已生成一张可执行的复盘卡。";
 }
 
 function normalizeMethod(card) {
@@ -1314,8 +1332,9 @@ function buildLocalBundle(rawInput, mode, scene, tags = state.homeTags) {
       提醒自己: anxietyReminder,
     },
     createdAt: now,
-    savedToMethodLibrary: mode === "event",
-    savedToCalibration: mode === "anxiety",
+    // 生成结果只是预览；用户明确点击保存后才进入记录、方法库或校准。
+    savedToMethodLibrary: false,
+    savedToCalibration: false,
   });
   return {
     record,
@@ -1360,7 +1379,6 @@ function buildManualBundle(rawInput, mode, scene, fields = submissionDraftFields
     };
     if (bundle.methodCard) {
       if (nextSteps.length) bundle.methodCard.steps = nextSteps;
-      if (improvement) bundle.methodCard.trigger = improvement;
       if (reminder) bundle.methodCard.reminder = reminder;
     }
   } else {
@@ -1381,7 +1399,7 @@ function buildManualBundle(rawInput, mode, scene, fields = submissionDraftFields
       bundle.calibrationCard.verificationDate = fields.verificationDate || draftVerificationDate();
     }
   }
-  bundle.record.conclusion = rawInput;
+  bundle.record.conclusion = deriveReviewConclusion(bundle.record);
   return bundle;
 }
 
@@ -1700,7 +1718,7 @@ function homePage() {
               <button class="home-meta-trigger selected" type="button" data-home-meta="scene" aria-expanded="${state.homeMetaOpen === "scene"}">◎ ${escapeHtml(sceneLabel)}</button>
               ${state.homeMetaOpen === "scene" ? homeScenePopover(mode) : ""}
             </div>
-            <button class="home-start-button" data-home-analyze>✎ ${isEvent ? "开始复盘" : "开始校准"}</button>
+            <button class="home-start-button" data-home-analyze>✎ 继续补充细节</button>
           </div>
         </div>
         <div class="home-start-art"><span>⌁</span><i></i><i></i></div>
@@ -1750,8 +1768,8 @@ function reviewSetupPage() {
   const method = currentAdvancedMethod();
   return shell(`
     <main class="content-page review-setup-page">
-      ${pageHeader("选择复盘方式", "home")}
-      <p class="setup-intro">先确认复盘类型和场景，再选择适合的整理方式。</p>
+      ${pageHeader("补充复盘细节", "home")}
+      <p class="setup-intro">原始描述会保留。只补充你已经确定的内容，空着的部分可以交给 AI 整理。</p>
       ${reviewContextControls(state.mode)}
       <div class="review-context-summary">${escapeHtml(homeReviewContextSummary())}</div>
       ${reviewStyleControls()}
@@ -1764,7 +1782,7 @@ function reviewSetupPage() {
         ${structuredDraftForm(state.mode)}
         <div class="input-footer">
           <strong>${state.reviewStyle === "quick" ? "默认模板会生成你的行动卡。" : `将以「${escapeHtml(method.title)}」整理本次复盘。`}</strong>
-          <button class="ghost-button" data-home-ai ${state.loading ? "disabled" : ""}>${state.loading ? "整理中..." : "AI 生成"}</button>
+          <button class="ghost-button" data-home-ai ${state.loading ? "disabled" : ""}>${state.loading ? "整理中..." : "AI 整理"}</button>
           <button class="primary-button" data-start-manual>生成行动卡 ${icons.chevron}</button>
         </div>
       </section>
@@ -2036,13 +2054,35 @@ function summaryPage() {
   return resultPage();
 }
 
+function resultSourceCard(record) {
+  const sourceLabel = record.type === "event" ? "这次发生的事" : "这次担心";
+  const context = [record.scene, ...(record.tags || [])].filter(Boolean);
+  return `
+    <section class="result-source-card">
+      <div class="result-source-head">
+        <div><span class="result-eyebrow">本次复盘来源</span><h2>${sourceLabel}</h2></div>
+        ${context.length ? `<div class="result-source-meta">${context.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}
+      </div>
+      <p>${record.rawInput ? renderMarkdown(record.rawInput) : "还没有填写原始描述。"}</p>
+      <small>下面的卡片只整理下一步行动，不会替换这段原始描述。</small>
+    </section>
+  `;
+}
+
 function resultPage() {
   const record = currentRecord();
   const title = state.mode === "event" ? "行动卡" : "焦虑校准卡";
   return shell(`
-    <main class="content-page narrow-page">
-      ${pageHeader(title, "home")}
-      ${fieldGrid(objectFields(record.resultCard, resultCards[state.mode].fields))}
+    <main class="content-page narrow-page result-page">
+      ${pageHeader("复盘结果", "home")}
+      ${resultSourceCard(record)}
+      <section class="result-card-section">
+        <div class="result-card-heading">
+          <div><span class="result-eyebrow">可执行部分</span><h2>${title}</h2></div>
+          <p>${state.mode === "event" ? "把这次经历转成下一次开始前能使用的检查清单。" : "把担心和可验证、可控制的动作分开。"}</p>
+        </div>
+        ${fieldGrid(objectFields(record.resultCard, resultCards[state.mode].fields))}
+      </section>
       <div class="action-row wrap">
         <button class="ghost-button" data-follow-up="${record.id}" ${state.followUpLoading ? "disabled" : ""}>${state.followUpLoading ? "追问中..." : "继续追问"}</button>
         ${state.mode === "event"
@@ -2716,6 +2756,10 @@ function recordMainLabel(record) {
   return record.type === "anxiety" ? "当时担心" : "当时发生";
 }
 
+function recordInsightLabel(record) {
+  return record.type === "anxiety" ? "现实检查" : "这次发现";
+}
+
 function cardMeta(items) {
   return items.filter(Boolean).map((item) => `<span>${escapeHtml(item)}</span>`).join("");
 }
@@ -2798,7 +2842,7 @@ function recordCard(record) {
       </div>
       <div class="record-preview library-card-sections">
         ${textSection(recordMainLabel(record), record.rawInput)}
-        ${textSection("复盘结论", record.conclusion)}
+        ${textSection(recordInsightLabel(record), record.conclusion)}
       </div>
       <footer class="library-card-footer">
         <span>状态</span>
